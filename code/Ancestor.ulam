@@ -297,7 +297,7 @@ transient Ancestor {
     cINS_RELEASE_CUTTER,       // #15 LD+RD: DX START CUT (TWO KEY SYSTEM)
     cINS_WAIT_CUT,             // #16 LD+RD: WT GRAND PAUSE 
 
-    cINS_PAYLOAD10,            // #17 new MO: UA BUILD PAYLOAD ARM
+    cINS_PAYLOAD10,            // #17 new MO: BC BUILD PAYLOAD ARM
     cINS_PAYLOAD11,            // #18 new MO: P0 DELIVER PAYLOAD
   };
 }
