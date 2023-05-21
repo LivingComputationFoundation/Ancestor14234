@@ -1,0 +1,5 @@
+/** API for 'double-density 1D chain'.
+ */
+quark D1D {
+}
+

@@ -1,0 +1,569 @@
+quark QCtorArm : LX + SW3Cmdr + Fail {
+  typedef Unsigned(3) LocalOp;
+  constant LocalOp cLOP_EOP = 0u; //< End Of Program
+  constant LocalOp cLOP_AEC = 1u; //< Cvt arm into ECs
+  constant LocalOp cLOP_RST = 2u; //< Reset and init arm
+  constant LocalOp cLOP_SYN = 3u; //< Sync with existing arm
+  constant LocalOp cLOP_NOP = 4u; //< Successfully do nothing
+  //  constant LocalOp cLOP_LUS = 5u; //< Turn off mMinDS in loop
+  //  constant LocalOp cLOP_TGT = 6u; //< Turn on mMinDS in loop
+  constant LocalOp cLOP_RSV = 7u; //< reserved
+
+  typedef Unsigned OpType;
+  constant OpType cOPTY_SEG = 0u; //< Seg fault set nothing
+  constant OpType cOPTY_LOC = 1u; //< Local operation set LocalOp
+  constant OpType cOPTY_ARM = 2u; //< Arm operation set SW3Packet
+
+  typedef Unsigned(8) ProgramCounter;
+  constant ProgramCounter cPCADDR_DETECT = 255u; //< sync if existing arm else reset
+  constant ProgramCounter cPCADDR_RESET  = 254u; //< kill PUs and init arm
+  constant ProgramCounter cPCADDR_SYNC   = 253u; //< take seqno off existing arm
+  constant ProgramCounter cPCADDR_EXIT   = 252u; //< rotate out and return at RESET
+  constant ProgramCounter cPCADDR_NEXT   = 251u; //< rotate out and return at DETECT
+  constant ProgramCounter cPCADDR_MAXPRG = 250u;
+
+  ProgramCounter mPC = cPCADDR_DETECT;
+  SW3Packet.SeqNo mSeqNo;
+
+  Bool mRetiring = false; //< if waiting for op[mPC] completion (else enacting it)
+
+  //// QCTORARM API
+
+  virtual Unsigned getCodeLength() ;
+
+  virtual OpType getOp(ProgramCounter pc, SW3Packet & armop, LocalOp & localop) ;
+
+  //// QCTORARM SERVICES
+  
+  Bool inStateDETECT() { return mPC == cPCADDR_DETECT; }
+  Bool inStateRESET() { return mPC == cPCADDR_RESET; }
+  Bool inStateSYNC() { return mPC == cPCADDR_SYNC; }
+  Bool inStateEXIT() { return mPC == cPCADDR_EXIT; }
+  Bool inStateNEXT() { return mPC == cPCADDR_NEXT; }
+  Bool inStatePROGRAM() { return mPC <= cPCADDR_MAXPRG; }
+
+  Bool inStateDISPATCH() { return inStatePROGRAM() && !mRetiring; }
+  Bool inStateBLOCK() { return inStatePROGRAM() && !mRetiring; }
+
+  Bool dispatchLocal(DiamondSequencerState & dss, ProcUnitInfo & pui, LocalOp lop, Unsigned plen) {
+    EventWindow ew;
+    mD&&pR("LXCADL10");
+    which (lop) {
+    case cLOP_EOP: { // END OF PROGRAM FLAG
+      mD&&pR("LXCADL11");
+      mPC = (ProgramCounter) plen;
+      return true;
+    }
+
+    case cLOP_NOP: { // DO NOTHING
+      mD&&pR("LXCADLNOP10");
+      return nextPC();
+    }
+
+      /*
+    case cLOP_TGT:  // Tighten local loop
+    case cLOP_LUS:  // Loosen local loop
+    {
+      mD&&pR("LXCADLLUSTGT10");
+      SN ussn = ew.getSiteNumber(self); // Find us
+      if (ussn == SN.maxof) fail(__FILE__,__LINE__);
+      Atom & a = ew[ussn];
+      if (a as TQDSControl)
+        a.setMinDSHopsCommand(lop == cLOP_TGT);
+      else
+        fail(__FILE__,__LINE__);
+      return nextPC();
+    }
+      */
+
+    case cLOP_RST: { // RESET AND INIT ARM
+      mD&&pR("LXCADLRST10");
+      if (doReset(dss, pui.mPU))
+        return true;
+      return false;
+    }
+
+    case cLOP_SYN: { // SYNC WITH EXISTING ARM VIA OPCODE
+      mD&&pR("LXCADLSYN10");
+      if (doSync(dss, pui.mPU))
+        return nextPC();
+      return false;
+    }
+
+    case cLOP_AEC: { // WHOLE ARM TO BECOME ECs
+      mD&&pR("LXCADL11E10");
+      Int cmdstat = commandStatusInArm(pui);
+      mD&&pR("LXCADL11E10RET");
+      mD&&pR(cmdstat);
+      if (cmdstat > 0) // command in progress in arm
+        return false;
+      if (cmdstat < 0)  // Arm is gone. Let's move on
+        return nextPC();
+
+      mD&&pR("LXCADL11E11");
+      Atom & a = ew[pui.mCodonSN];
+      if (a as SwapWormHC3) {
+        mD&&pR("LXCADL11E12");
+        if (inject(a.mUpSignal, mSeqNo, cSW3C_BECOME, EmptyCodon.classidof))
+          return true;
+      }
+      mD&&pR("LXCADL11E13");
+      return false;
+    }
+    otherwise: { // ain't no other ops
+      mD&&pR("LXCADL12");
+      Fail f;
+      f.fail(__FILE__,__LINE__);
+    }
+    }
+    return false;
+  }
+
+  Bool dispatchRemote(SwapWormHC3 & s3, SW3Packet p) {
+    mD&&pR("LXCADR10");
+    mD&&pR(p);
+    if (inject(s3.mUpSignal, mSeqNo, p.mCmd, p.mArg)) {
+      mRetiring = true;
+      return true;
+    }
+    mD&&pR("LXCADR12");
+    return false;
+  }
+
+  /** \returns < 0 if there's no SW3 arm. \returns 0 if there is an
+      arm and the current command is complete. Otherwise \returns > 0
+      if the current command in the arm is still in progress */
+  Int commandStatusInArm(ProcUnitInfo & pui) {
+    EventWindow ew;
+    SN swsn = pui.mCodonSN;
+    mD&&pR("ICCIA10");
+    mD&&pR(swsn);
+    mD&&pR(pui);
+    if (!(ew[swsn] is SwapWormHC3)) return -1;
+    mD&&pR("ICCIA11");
+    SwapWormHC3 & sw3 = (SwapWormHC3&) ew[swsn];
+    SW3Packet dpkt = (SW3Packet) sw3.mDownSignal;
+    if (mSeqNo.isEqual(dpkt.mSeqNo) &&
+        dpkt.mCmdStatus != cSW3CMST_TRYING)
+      return 0;
+    mD&&pR("ICCIA12");
+    return 1;
+  }
+
+  //// LX API
+  @Override
+  virtual Bool perform(DiamondSequencerState & dss) {
+    Fail f;
+    mD&&pR("LXCTA10");
+    ProcUnit pu = cPUNIT_REG;
+
+    if (mRetiring) return performBlocking(dss, pu);
+    return performDispatch(dss, pu);
+  }
+
+  Bool performBlocking(DiamondSequencerState & dss, ProcUnit pu) {
+    Fail f;
+    ProcUnitInfo & pui = dss.getPUInfo(pu);
+    EventWindow ew;
+
+    SN swsn = pui.mCodonSN;
+    mD&&pR(swsn);
+    mD&&pR(pui);
+    if (!ew.isAccessible(swsn)) return false; //??
+    mD&&pR("LXCTA12");
+    if (!(ew[swsn] is SwapWormHC3)) return false; //??
+    SwapWormHC3 & sw3 = (SwapWormHC3&) ew[swsn];
+    SW3Packet dpkt = (SW3Packet) sw3.mDownSignal;
+
+    //// CHECK COMMAND COMPLETION
+    if (mSeqNo.isEqual(dpkt.mSeqNo)) {
+
+      if (dpkt.mCmdStatus == cSW3CMST_TRYING) // blocking on command completion
+        return false;
+
+      if (dpkt.mCmdStatus != cSW3CMST_DID) {
+        mD&&pR("LXCTA13CHECK"); // Just shout it into the void, 'for now'?
+        mD&&pR(dpkt);
+      }
+
+      //// COMMAND IS COMPLETE: MOVE ON
+      return nextPC();
+    }
+    
+    return true; // JUST BLOCK
+  }
+
+  Bool nextPC() { return gotoPC((ProgramCounter) (mPC+1u)); }
+  Bool gotoPC(ProgramCounter newpc) {
+    mPC = newpc;
+    mRetiring = false;
+    return true;
+  }
+
+  Bool doReset(DiamondSequencerState & dss, ProcUnit pu) {
+    Fail f;
+    ProcUnitInfo & pui = dss.getPUInfo(pu);
+    EventWindow ew;
+
+    if (killPU(pu,dss) && killPU(cPUNIT_INP,dss)) {
+      if (pui.mEmptySN == SN.maxof) return true;
+      SwapWormHC3 h;
+      h.mPocketPtrs[cBODY_UP] = cPP_NULL;
+      h.mPocketPtrs[cBODY_DOWN] = cPP_NULL;
+      h.setSingleTQ(pui.mInQuadrant); // TQDS default: You're good in only starting quadrant
+
+      SW3Packet p3;           
+      p3.mCmd = cSW3C_NOOP; // Init to a NOOP cmd,
+      p3.mArg = 0u;
+      p3.mSeqNo = mSeqNo;             // matching our sequence,
+      p3.mCmdStatus = cSW3CMST_DO;
+      h.mUpSignal = p3;
+      
+      p3.mCmdStatus = cSW3CMST_DID; // that was just completed
+      h.mDownSignal = p3;
+      
+      ew[pui.mEmptySN] = h.atomof;
+      pui.mCodonSN = pui.mEmptySN; // there's a codon there now
+      pui.mEmptySN = SN.maxof;     // and we just consumed the empty
+
+      return nextPC();
+    }
+    return false;
+  }
+
+  Bool doSync(DiamondSequencerState & dss, ProcUnit pu) {
+    mD&&pR("LXDOSYN10");
+
+    Fail f;
+    ProcUnitInfo & pui = dss.getPUInfo(pu);
+    EventWindow ew;
+
+    if (pui.mCodonSN == SN.maxof)
+      return true; // XX???
+
+    mD&&pR("LXDOSYN11");
+
+    Atom & a = ew[pui.mCodonSN];
+    if (a as SwapWormHC3) {
+      mD&&pR("LXDOSYN11");
+      SW3Packet dpkt = (SW3Packet) a.mDownSignal;
+      SW3CmdStatus dst = dpkt.mCmdStatus;
+      if (dst == cSW3CMST_DID || dst == cSW3CMST_CANT) {
+        mD&&pR("LXDOSYN12");
+        // We can sync up
+        mSeqNo = dpkt.mSeqNo;
+        mRetiring = false;
+        return true;
+      }
+      mD&&pR("LXDOSYN13");
+    }
+    mD&&pR("LXCADL11E14");
+    return false;
+  }
+
+  Bool performDispatch(DiamondSequencerState & dss, ProcUnit pu) {
+    mD&&pR("LXCTAPRDS10");
+    Fail f;
+    ProcUnitInfo & pui = dss.getPUInfo(pu);
+    EventWindow ew;
+    //    Bool justReset = false;
+    Unsigned plen = getCodeLength();
+
+    mD&&pR("LXCTAPRDS11");
+    mD&&pR(plen);
+
+    if (inStatePROGRAM() && mPC >= plen) // Supply implied exit
+      gotoPC(cPCADDR_EXIT);
+
+    if (inStateDETECT()) {
+      //// STATE DETECT: IS THERE AN EXISTING ARM IN PU?
+      mD&&pR("LXCTAPRDS11STDE");
+
+      if (pui.mCodonSN == SN.maxof) return gotoPC(cPCADDR_RESET);
+      if (pui.mCodonSN == 0u) f.fail(__FILE__,__LINE__);
+      if (ew[pui.mCodonSN] is SwapWormHC3) return gotoPC(cPCADDR_SYNC);
+      return gotoPC(cPCADDR_RESET);
+    }
+
+    if (inStateSYNC()) {
+      //// STATE SYNC: CONNECT TO EXISTING ARM VIA ADDRESS
+
+      if (doSync(dss, pu)) {
+        gotoPC(0u);
+        return true;
+      } else 
+        return false;
+    }
+
+
+    if (inStateRESET()) {
+      //// STATE RESET
+
+      if (doReset(dss, pu)) {
+        gotoPC(0u);
+        return true;
+      } else 
+        return false;
+    }
+
+    mD&&pR("LXCTA1011");
+    if (inStateEXIT()) {
+      //// STATE EXIT
+      mPC = cPCADDR_DETECT;     // Back to detect if we are re-executed
+      markCurrentInstructionForRotation(dss, 0u);
+      return false;
+    }
+
+    if (inStateNEXT()) {
+      //// STATE NEXT
+      // XX WHAT DOES STATE NEXT MEAN PLEASE?
+      markCurrentInstructionForRotation(dss, 0u); 
+      return false;
+    }
+
+    // Check for local op
+    SW3Packet armop;
+    LocalOp localop;
+    OpType opty = getOp(mPC, armop, localop);
+
+    if (opty == cOPTY_SEG) {
+      f.fail(__FILE__,__LINE__);
+    }
+
+    if (opty == cOPTY_LOC) {
+      mD&&pR("LXCTA1012LOCAL");
+      return dispatchLocal(dss, pui, localop, plen);
+    }
+
+    if (opty != cOPTY_ARM)
+      f.fail(__FILE__,__LINE__);
+
+    // All other states must have SW3 arm
+
+    mD&&pR("LXCTA11");
+    SN swsn = pui.mCodonSN;
+    mD&&pR(swsn);
+    mD&&pR(pui);
+    if (!ew.isAccessible(swsn)) return false; //??
+    mD&&pR("LXCTA12");
+    if (!(ew[swsn] is SwapWormHC3)) return false; //??
+    SwapWormHC3 & sw3 = (SwapWormHC3&) ew[swsn];
+    SW3Packet dpkt = (SW3Packet) sw3.mDownSignal;
+
+    mD&&pR("LXCTA13");
+
+    if (inStateDISPATCH()) {
+      //// STATE DISPATCH
+
+      mD&&pR("LXCTA14");      
+
+      if (dispatchRemote(sw3, armop)) return true;
+
+      mD&&pR("DISPATCH FAILED");
+      mD&&pR(armop);
+      return false;
+    }
+
+    /* shouldn't be here anymore if so..
+    if (inStateBLOCK()) { // blocking on command acknowledgment
+      //// STATE BLOCK
+      
+      mD&&pR("LXCTA15");      
+      return false;
+    }
+    */
+
+    mD&&pR("LXKIDI12");
+    return false;
+  }
+
+  //// CODON API
+  virtual Void init() {
+    super.init();
+    mDSType = cDS_NORM;
+  }
+
+}
+
+/** \symbol SC
+    \color #60f
+ */
+element LXCtorArm : QCtorArm {
+
+  //// QCTORARM API
+  @Override
+  virtual Unsigned getCodeLength() {
+    return mProgram.lengthof;
+  }
+
+  @Override
+  virtual OpType getOp(ProgramCounter pc, SW3Packet & p, LocalOp & localop) {
+    Fail f;
+    ASCII b;
+
+    if (pc >= mProgram.lengthof) b = '.'; // implicit EOP
+    else b = mProgram[pc];
+
+    which (b) {
+    case '.': { localop = cLOP_EOP; return cOPTY_LOC; }
+    case 'A': { localop = cLOP_AEC; return cOPTY_LOC; }
+    case 'R': { localop = cLOP_RST; return cOPTY_LOC; }
+    case 'Y': { localop = cLOP_SYN; return cOPTY_LOC; }
+
+    case 'n': { p.mCmd = cSW3C_GROW; p.mArg = (SW3Arg) (1u<<cPP_NORTH); return cOPTY_ARM; }
+    case 's': { p.mCmd = cSW3C_GROW; p.mArg = (SW3Arg) (1u<<cPP_SOUTH); return cOPTY_ARM; }
+    case 'e': { p.mCmd = cSW3C_GROW; p.mArg = (SW3Arg) (1u<<cPP_EAST); return cOPTY_ARM; }
+    case 'w': { p.mCmd = cSW3C_GROW; p.mArg = (SW3Arg) (1u<<cPP_WEST); return cOPTY_ARM; }
+    case '-': { p.mCmd = cSW3C_SHRINK; return cOPTY_ARM; }
+    case 'W': { p.mCmd = cSW3C_PLACE; p.mArg = Wall.classidof; return cOPTY_ARM; }
+    case 'X': { p.mCmd = cSW3C_DELATM; p.mArg = Wall.classidof; return cOPTY_ARM; }
+    case 'D': { p.mCmd = cSW3C_DIEPL; p.mArg = Wall.classidof; return cOPTY_ARM; }
+    case 'E': { p.mCmd = cSW3C_BECOME; p.mArg = EmptyCodon.classidof; }
+    case 'S': { p.mCmd = cSW3C_HC3CTL; p.mArg = (SW3Arg) ((1u<<2u)|cQUAD_SW); return cOPTY_ARM; }
+    case 'H': { p.mCmd = cSW3C_HC3CTL; p.mArg = (SW3Arg) ((0u<<2u)|cQUAD_SW); return cOPTY_ARM; }
+    }
+    f.fail(__FILE__,__LINE__);
+    return cOPTY_SEG; // NOT REACHED
+  }
+  
+  String mProgram;
+
+}
+
+/** \symbol BC
+    \color #06f
+ */
+element LXBioCtorArm : QCtorArm {
+
+  BOpCode mProgram[7] = { cBOC_LEOP };
+
+  //// QCTORARM API
+  @Override
+  virtual Unsigned getCodeLength() {
+    return mProgram.lengthof;
+  }
+
+  @Override
+  virtual OpType getOp(ProgramCounter pc, SW3Packet & armop, LocalOp & localop) {
+    Fail f;
+
+    BOpCode bop;
+
+    if (pc >= mProgram.lengthof) bop = cBOC_LEOP; // implicit EOP
+    else bop = mProgram[pc];
+    
+    if (bop == cBOC_LEOP) { localop = cLOP_EOP; return cOPTY_LOC; }
+    if (bop == cBOC_LAEC) { localop = cLOP_AEC; return cOPTY_LOC; }
+    if (bop == cBOC_LRST) { localop = cLOP_RST; return cOPTY_LOC; }
+    if (bop == cBOC_LSYN) { localop = cLOP_SYN; return cOPTY_LOC; }
+    if (bop == cBOC_LNOP) { localop = cLOP_NOP; return cOPTY_LOC; }
+    //    if (bop == cBOC_LLUS) { localop = cLOP_LUS; return cOPTY_LOC; }
+    //    if (bop == cBOC_LTGT) { localop = cLOP_TGT; return cOPTY_LOC; }
+
+    if (op(bop, armop)) return cOPTY_ARM;
+
+    f.fail(__FILE__,__LINE__);
+    return cOPTY_SEG; // NOT REACHED
+  }
+  
+  Bool op(BOpCode bop, SW3Packet & p) {
+    which (bop) {
+    case cBOC_AGNT: { p.mCmd = cSW3C_GROW; p.mArg = (SW3Arg) (1u<<cPP_NORTH); }
+    case cBOC_AGST: { p.mCmd = cSW3C_GROW; p.mArg = (SW3Arg) (1u<<cPP_SOUTH); }
+    case cBOC_AGET: { p.mCmd = cSW3C_GROW; p.mArg = (SW3Arg) (1u<<cPP_EAST); }
+    case cBOC_AGWT: { p.mCmd = cSW3C_GROW; p.mArg = (SW3Arg) (1u<<cPP_WEST); }
+      //    case '-': { p.mCmd = SW3Packet.cSW3C_SHRINK; }
+      //    case 'W': { p.mCmd = SW3Packet.cSW3C_PLACE; p.mArg = Wall.classidof; }
+      //    case 'X': { p.mCmd = SW3Packet.cSW3C_DELATM; p.mArg = Wall.classidof; }
+      //    case 'D': { p.mCmd = SW3Packet.cSW3C_DIEPL; p.mArg = Wall.classidof; }
+      //    case 'E': { p.mCmd = SW3Packet.cSW3C_BECOME; p.mArg = EmptyCodon.classidof; }
+    case cBOC_ADDC: {
+      p.mCmd = cSW3C_HC3CWDS; /* clockwise from heading direction*/ 
+      p.mArg = (SW3Arg) (
+                         (cPUNIT_OUT<<6u) | //CW 270
+                         (cPUNIT_XEQ<<4u) | //CW 180 (looking back)
+                         (cPUNIT_REG<<2u) | //CW 90
+                         (cPUNIT_INP<<0u)); //CW 0
+      }
+    case cBOC_ADDA: {
+      p.mCmd = cSW3C_HC3ACDS; /* anticlockwise from heading direction*/ 
+      p.mArg = (SW3Arg) (
+                         (cPUNIT_OUT<<6u) | //CW 270
+                         (cPUNIT_XEQ<<4u) | //CW 180 (looking back)
+                         (cPUNIT_REG<<2u) | //CW 90
+                         (cPUNIT_INP<<0u)); //CW 0
+      }
+      //    case 'H': { p.mCmd = SW3Packet.cSW3C_HC3CTL; p.mArg = (SW3Packet.Arg) ((0u<<2u)|cQUAD_SW); /* SW corner to _MAKEHG*/ }
+    otherwise: { return false; }
+    }
+    return true;
+  }
+
+}
+
+/** \symbol UA
+    \color #6f0
+ */
+element LXUArm : QCtorArm {
+
+  UOpCode mProgram[11] = { cUOP_LEOP };
+
+  //// QCTORARM API
+  @Override
+  virtual Unsigned getCodeLength() {
+    return mProgram.lengthof;
+  }
+
+  @Override
+  virtual OpType getOp(ProgramCounter pc, SW3Packet & armop, LocalOp & localop) {
+    Fail f;
+
+    UOpCode uop;
+
+    if (pc >= mProgram.lengthof) uop = cUOP_LEOP; // implicit EOP
+    else uop = mProgram[pc];
+    
+    if (uop == cUOP_LEOP) { localop = cLOP_EOP; return cOPTY_LOC; }
+    if (uop == cUOP_LAEC) { localop = cLOP_AEC; return cOPTY_LOC; }
+
+    if (op(uop, armop)) return cOPTY_ARM;
+
+    f.fail(__FILE__,__LINE__);
+    return cOPTY_SEG; // NOT REACHED
+  }
+  
+  Bool op(UOpCode uop, SW3Packet & p) {
+    which (uop) {
+    case cUOP_AGNT: { p.mCmd = cSW3C_GROW; p.mArg = (SW3Arg) (1u<<cPP_NORTH); }
+    case cUOP_AGST: { p.mCmd = cSW3C_GROW; p.mArg = (SW3Arg) (1u<<cPP_SOUTH); }
+    case cUOP_AGET: { p.mCmd = cSW3C_GROW; p.mArg = (SW3Arg) (1u<<cPP_EAST); }
+    case cUOP_AGWT: { p.mCmd = cSW3C_GROW; p.mArg = (SW3Arg) (1u<<cPP_WEST); }
+    case cUOP_ADDC: {
+      p.mCmd = cSW3C_HC3CWDS;
+      /*
+      p.mArg = (SW3Arg) (
+                                (cPUNIT_REG<<6u) | //NW
+                                (cPUNIT_XEQ<<4u) | //NE
+                                (cPUNIT_OUT<<2u) | //SE
+                                (cPUNIT_INP<<0u)); //SW
+      */
+      p.mArg = (SW3Arg) (
+                         (cPUNIT_OUT<<6u) | //CW 270
+                         (cPUNIT_XEQ<<4u) | //CW 180 (looking back)
+                         (cPUNIT_REG<<2u) | //CW 90
+                         (cPUNIT_INP<<0u)); //CW 0
+    }
+    case cUOP_ADDA: {
+      p.mCmd = cSW3C_HC3ACDS;
+      p.mArg = (SW3Arg) (
+                         (cPUNIT_OUT<<6u) | //CW 270
+                         (cPUNIT_XEQ<<4u) | //CW 180 (looking back)
+                         (cPUNIT_REG<<2u) | //CW 90
+                         (cPUNIT_INP<<0u)); //CW 0
+    }
+    otherwise: { return false; }
+    }
+    return true;
+  }
+
+}

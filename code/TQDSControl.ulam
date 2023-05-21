@@ -1,0 +1,256 @@
+quark TQDSControl + DTU {
+  TQMap mTQMapCommand = 0xf; //< currently acceptable target quadrants; default: all
+  TQMap mTQMapValue = 0x0;   //< currently occupied target quadrants; default: all
+
+  Bool mECsGood = false;     //< true to promote EC generation, false for EC deletion
+  Bool mLockedDown = false;  //< No structural changes allowed when true
+  typedef HardCellG.HopCount HopCount;
+  HopCount mMaxDSHopsValue;           //< Value return; default 0u
+
+  //// TQDSControl API
+  virtual Bool stabilizeCommandAnchor(PocketChainState & pcs) {
+    pcs.pR("TQDSSTABCOM10");
+    //// DO WE HAVE BOTH UP AND DOWN MATES?
+    SN upsn = pcs.mEWSNMate[cBODY_UP];
+    SN dnsn = pcs.mEWSNMate[cBODY_DOWN];
+    EventWindow ew;
+    if (!ew.isAccessible(upsn) ||
+        !ew.isAccessible(dnsn)) {
+      setECsGood(false); // Never like ECs in open cables?
+      return false;
+    }
+    //// WE DO HAVE BOTH UP AND DOWN MATES
+
+    //// ARE THEY THE SAME EC STATE?
+    Bool upec = ew[upsn] is EmptyCodon;
+    Bool dnec = ew[dnsn] is EmptyCodon;
+
+    if (upec != dnec)
+      return false; // NO
+    //// THEY ARE THE SAME EC STATE
+
+    setECsGood(!upec); // Need ecs if neither is EC
+
+    return false;               // But keep on trucking
+  }
+
+  virtual Bool stabilizeValueAnchor(PocketChainState & pcs) {
+    pcs.pR("TQDSSTABVAL10");
+    mTQMapValue = 0u;
+    mMaxDSHopsValue = 0u;
+    return true;
+  }
+
+  //// TQDSControl SERVICES
+
+  Bool isEqualTQDSCommand(TQDSControl & other) {
+    return
+      mTQMapCommand == other.mTQMapCommand &&
+      mLockedDown == other.mLockedDown &&
+      mECsGood == other.mECsGood;
+  }
+
+  Bool isDefaultTQDS() {
+    return
+      mTQMapCommand == 0xf &&
+      mTQMapValue == 0x0 &&
+      mECsGood == false &&
+      mLockedDown == false &&
+      mMaxDSHopsValue == 0u;
+  }
+
+  Void updateTQDSValues(PocketChainState & pcs) {
+    PocketQuadrant & pqWRONG = pcs.mPocket.mPocketQuadrant;
+
+    PocketHC3 & hc3 = pcs.mPocket;
+    PocketQuadrant & pq = hc3.mPocketQuadrant;
+
+    pcs.pR("UTQDSV10");
+    pcs.pR(pqWRONG);
+    pcs.pR("UTQDSV10SHOULDBESAMEAS:");
+    pcs.pR(pq);
+
+    if (!pq.mQuadrantKnown) {
+      Fail f;
+      f.fail(__FILE__,__LINE__);
+    }
+
+    pcs.pR("UTQDSV11PRE");
+    pcs.pR(self);
+    /// MAX-in our dshops
+    Unsigned ourdshops = pq.mMinDSHops + 1u;
+    if (ourdshops > mMaxDSHopsValue)
+      mMaxDSHopsValue = (HopCount) ourdshops;
+
+    /// OR-in our quadrant
+    mTQMapValue |= (TQMap) (1u<<pq.mQuadrant);
+
+    pcs.pR("UTQDSV12POST");
+    pcs.pR(self);
+  }
+
+
+  Int chainError(PatchState & ps, PocketDir pd) {
+    ps.pR("CHAERR10");
+    Unsigned dshops = ps.mDSHops[pd];
+    Unsigned uphops = ps.mUpHops[pd];
+    Unsigned maxhops = ps.mMaxUpHops;
+    Unsigned srdist = maxhops - uphops - 1u;
+    XZone ctrzone = ps.mCenterXZone;
+    PocketDir tquad = xzoneAndPatchDir2TargetQuadrant(ctrzone, pd);
+    ps.pR(dshops);
+    ps.pR(uphops);
+    ps.pR(tquad);
+
+    Int srerr = errorFromDSHops(ps,dshops); // size range error
+    Int tqerr = errorFromTQ(ps,tquad);      // target quadrant error
+    Int ecerr = errorFromEC(ps);            // EC error
+
+    ps.pR("CHAERR11");
+    ps.pR(srerr);
+    ps.pR(tqerr);
+    ps.pR(ecerr);
+    return srerr + tqerr + ecerr;
+  }
+
+  constant Int cILLEGAL_TQ_ERROR = 10000000; // 10M. Really don't want yall to do this
+  Int errorFromTQ(PatchState & ps, PocketDir forpd) {
+    ps.pR("ERFMTQ10");
+    ps.pR(forpd);
+    ps.pR(1u<<forpd);
+    Int ret = ((mTQMapCommand & (1u<<forpd)) == 0u) ?
+      cILLEGAL_TQ_ERROR :
+      0;
+    ps.pR("ERFMTQ11");
+    ps.pR(ret);
+    return ret;
+  }
+
+  constant Int cILLEGAL_DSHOPS_ERROR = 8;
+
+  Int errorFromDSHops(PatchState & ps, Unsigned dshops) {
+    ps.pR("ERFMSR10");
+    // ALWAYS CONSTRAINED  if (!mMinDSHopsCommand) return 0; // Not constrained by dshops
+    Int ret = cILLEGAL_DSHOPS_ERROR * (Int) dshops;
+
+    //// IF THE DSHOPS WE'RE DEALING WITH IS "MUCH"
+    //// LESS THAN THE MAX WE KNOW OF, CUT THE
+    //// PENALTY A LOT
+    if (dshops + 1u < ps.mMaxDSHopsValueAtCtr) {
+      ps.pR("ERFMSR10INCUT");
+      ret = ret/40 + 2;
+    }
+
+    ps.pR("ERFMSR11");
+    ps.pR(ret);
+    return ret;
+  }
+
+  constant Int cEC_ERROR = 500;
+
+  Int errorFromEC(PatchState & ps) {
+    ps.pR("ERFMEC10");
+    if (!(self is EmptyCodon)) return 0;
+
+    return mECsGood ? -cEC_ERROR : cEC_ERROR;
+  }
+
+  Void copyTQDSControlFrom(TQDSControl & srctqds) {
+    self = srctqds;
+  }
+
+  Bool takeCommandFromDown(TQDSControl & down) {
+    return down.sendCommandToUp(self);
+  }
+
+  Bool takeValueFromUp(TQDSControl & up) {
+    return up.sendValueToDown(self);
+  }
+
+  Bool sendCommandToUp(TQDSControl & up) {
+    Bool ret = false;
+
+    // Overwrite up command
+    if (up.mLockedDown != mLockedDown) {
+      up.mLockedDown = mLockedDown;
+      ret = true;
+    }
+
+    // Overwrite up ecs
+    if (up.mECsGood != mECsGood) {
+      up.mECsGood = mECsGood;
+      ret = true;
+    }
+
+    // Overwrite up map
+    if (up.mTQMapCommand != mTQMapCommand) {
+      up.mTQMapCommand = mTQMapCommand;
+      ret = true;
+    }
+
+    return ret;
+  }
+
+  Bool sendValueToDown(TQDSControl & down) {
+    Bool ret;
+    
+    // Overwrite down values, true if changes
+
+    if (down.mMaxDSHopsValue != mMaxDSHopsValue) {
+      down.mMaxDSHopsValue = mMaxDSHopsValue;
+      ret = true;
+    }
+
+    if (down.mECsGood != mECsGood) {
+      down.mECsGood = mECsGood;
+      ret = true;
+    }
+
+    if (down.mTQMapValue != mTQMapValue) {
+      down.mTQMapValue = mTQMapValue;
+      ret = true;
+    }
+    
+    return ret;
+  }
+
+  Void setAllTQs() {
+    mTQMapCommand = 0xf;
+  }
+
+  Void setSingleTQ(PocketDir tq) {
+    mTQMapCommand = (TQMap) (1u << tq);
+  }
+
+  Void addTQ(PocketDir tq) {
+    mTQMapCommand |= (TQMap) (1u << tq);
+  }
+
+  Void setLockedDown(Bool islocked) {
+    mLockedDown = islocked;
+  }
+
+  Void setECsGood(Bool ecsGood) {
+    mECsGood = ecsGood;
+  }
+
+}
+
+/** Flip the mLockedDown in all dist 1 TQDS
+    \symbol QT
+    \color #33c
+
+ */
+element TQDSToggleMin + DTU {
+  Void behave() {
+    EventWindow ew;
+    for (SN sn = 1u; sn <= 4u; ++sn) {
+      if (!ew.isAccessible(sn)) continue;
+      Atom & a = ew[sn];
+      if (a as TQDSControl) {
+        a.mLockedDown = !a.mLockedDown;
+      }
+    }
+    ew[0] = Empty.instanceof;
+  }
+}

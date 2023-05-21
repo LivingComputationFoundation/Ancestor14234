@@ -1,0 +1,179 @@
+transient MembraneState : D1PocketableState {
+}
+
+transient MembraneBaseState : MembraneState {
+
+  //// Intention API
+  @Override
+  virtual Bool init(Intender & seg) {
+    mD&&pR("MMBST10");
+    if (super.init(seg)) { // Let's have membrane be pretty fragile 
+      mD&&pR("MMBST11");    // so they don't clog things up too ofteno
+      mD&&pR(mPocket.mStatus);
+      mD&&pR("MMBST1110PRESEG");
+      mD&&pR(seg);
+      Membrane & mb = (Membrane&) seg;
+      mD&&pR("MMBST1110PREMEM");
+      mD&&pR(mb);
+      // If we can't init, let's not signal. Does that work for you?
+      mb.resetDCs();
+      mD&&pR("MMBST1110POST");
+      mD&&pR(mb);
+      mD&&pR("MMBST1110POSTSEG");
+      mD&&pR(seg);
+      //      mb.die();
+      return true;
+    }
+    mD&&pR("MMBST12");
+    return false;
+  }
+}
+
+/**
+   \symbol MB
+   \color #f0f
+ */
+element MBase : Membrane + Random {
+  
+  virtual ClassId getIntentionClass() {
+    return MembraneBaseState.classidof;
+  }
+
+  //// UrSelf API
+  @Override
+  virtual ARGB getColor(Unsigned selector) {
+    ARGB ret = super.getColor(selector);
+    if (maxDCs() == 0u) {
+      ColorUtils cu;
+      ret = cu.dimmer(ret);
+    }
+    return ret;
+  }    
+
+
+  //// DEWLine API
+  @Override
+  virtual DefCon signalDC() {
+    return cDC_CONT; // MBase signals 'contact'
+  }
+
+  //// Membrane API
+
+  typedef XTimer(4u,7u,1u) DecayTimer;
+  DecayTimer mDecayTimer;
+  
+  Void behave() {
+    mD&&pR("MBBEH10");
+    DebugUtils du;
+    MembraneBaseState mbs;
+    PocketHC3 & p = mbs.mPocket;
+    mD&&pR("MBBEH11UNINIT");
+    mD&&pR(mbs);
+    mD&&pR("MBBEH12SELF");
+    mD&&pR(self);
+    
+    if (mbs.init(self)) {
+      mD&&pR("MBBEH13MBS");
+      mD&&pR(mbs);
+      mD&&pR("MBBEH13SELF");
+      mD&&pR(self);
+      mD&&pR("MBBEH13POCK");
+      mD&&pR(p);
+
+      if (p.mStatus == PocketHC3.cSTATUS_BENT) {
+        if (mDecayTimer.countAlarm()) return die();
+        return; //block
+      }
+      mD&&pR("MBBEH14");
+      if (p.mStatus == PocketHC3.cSTATUS_EDGE) {
+        if (mDecayTimer.countAlarm()) return die();
+        return; //block
+      }
+      mD&&pR("MBBEH15");
+      if (p.mStatus != PocketHC3.cSTATUS_OPEN) {
+        return die();
+      }
+      mD&&pR("MBBEH16");
+    }
+    mD&&pR("MBBEH17");
+    mD&&pR(p.mCoordCount);
+    // Pocket can see just 2 HC3 during movement
+    if (p.mCoordCount == 2u) return; //block
+    if (p.mCoordCount != 3u)
+      if (oneIn(10u)) return die();
+      else return; // block
+
+    mD&&pR("MBBEH18");
+
+    /// Find open dir
+    Unsigned opendir = Unsigned.maxof;
+    for (Unsigned i = 0u; i < 4u; ++i) {
+      mD&&pR("MBBEH19");
+      mD&&pR(p.mCoords[i]);
+      if (p.mCoords[i].length() == 0u) { // uninitted
+        opendir = i;
+        mD&&pR(opendir);
+        break;
+      }
+    }
+    mD&&pR("MBBEH210");
+        
+    /// Lock or check open dir
+    if (mDirBound) {
+      mD&&pR("MBBEH211");
+      if (opendir != mOpenDir) return die();
+    } else {
+      mD&&pR("MBBEH212");
+      mOpenDir = (PocketDir) opendir;
+      mDirBound = true;
+    }
+    mD&&pR("MBBEH213");
+    /// We are bound and good
+
+    mDecayTimer.reset();
+    mD&&pR("MBBEH214PRE");
+    mD&&pR(self);
+    
+    Unsigned sensorcount = scanOuterQuadrant();
+    mD&&pR("MBBEH214POST");
+    mD&&pR(self);
+
+    // Slow and ungainly sensor seeding
+    if (sensorcount == 0u) {
+      // Signal contact if we can't see any sensors!
+      mD&&pR("MBBEH215");
+      DirIdx d1, d2;
+      axesOf(mOpenDir,d1,d2);
+      mD&&pR(d1);
+      mD&&pR(d2);
+      mD&&pR("MBBEH216");
+      DefCon dc = signalDC();
+      mD&&pR(dc);
+      maxDC(d1,dc);
+      mD&&pR(dc);
+      maxDC(d2,dc);
+      mD&&pR(dc);
+      mD&&pR("MBBEH217");
+
+      if (oneIn(8u)) { 
+        mD&&pR("MBBEH218");
+      
+        SN maybe = (SN) between(5u,24u/*12u*/);
+        if (ew.isAccessible(maybe)) {
+          if (ew[maybe] is Empty) {
+            C2D mc = ew.getCoord(maybe);
+            if (inQuadrant(mc,mOpenDir)) {
+              mD&&pR("MBBEH219");
+              MSensor seed;
+              seed.mOpenDir = mOpenDir;
+              seed.mDirBound = true;
+              mD&&pR(seed);
+              ew[maybe] = seed.atomof;
+            }
+          }
+        }
+      }
+    }
+  }
+}
+

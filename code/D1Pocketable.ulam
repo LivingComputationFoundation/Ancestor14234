@@ -1,0 +1,186 @@
+transient D1PocketableState : Intention + DTU {
+
+  EventWindow ew;
+  Random random;
+  DebugUtils du;
+  PocketHC3 mPocket;
+
+  Bool mAvailablesFound; //< true after findAvailables called
+  Bool mAllPocketsGood; //< true if all pockets are good
+
+  // availability data valid after findAvailables(..) called
+  D1SNs mEmptySNs[cPP_EAST+1u]; // empty sns found in 0..4
+  D1SNs mUsSNs[cPP_EAST+1u]; // SNs of D1Pocketables found 0..4
+  Bool mPocketIterable[cPP_EAST+1u]; // 0..4
+  Unsigned mPocketSize[cPP_EAST+1u]; // 0..4
+  Unsigned mPocketFull[cPP_EAST+1u]; // 0..4
+  //XXX USE  mEmptySNs[ptr].count() INSTEAD Unsigned mPocketEmpty[cPP_EAST+1u]; // 0..4
+  Unsigned mPocketInaccessible[cPP_EAST+1u]; // 0..4
+
+  //// Intention API
+  @Override
+  virtual Bool init(Intender & in) {
+    mD&&pR("PKBST10");
+    if (super.init(in)) return true;
+    for (Unsigned i = cPP_SELF; i <= cPP_EAST; ++i) {
+      mEmptySNs[i].init();
+      mUsSNs[i].init();
+      mPocketIterable[i] = false;
+      mPocketSize[i] = 0u;
+      mPocketFull[i] = 0u;
+      mPocketInaccessible[i] = 0u;
+    }
+    mAllPocketsGood = false;
+    mAvailablesFound = false;
+    mD&&pR("PKBST11");
+    if (mPocket.init(in) != PocketHC3.cSTATUS_OK) return true; // Distorted pocket
+    mD&&pR("PKBST12");
+    return false;
+
+  }
+
+  virtual Bool observe(Intender & in) {
+    mD&&pR("D1PSTOB10");
+    mAllPocketsGood = findAvailables();
+    mD&&pR(mAllPocketsGood);
+    return false;
+  }
+
+  //// D1PocketableState SERVICES
+
+  /** false if any bad pockets else true
+      (Note all pockets are checked; caller can
+      iterate over ss.mPocketFull[..] etc even
+      if false is returned here)
+   */
+  Bool findAvailables() {
+    if (mAvailablesFound) {
+      Fail f;
+      f.fail(__FILE__,__LINE__); // Let's clean up all these extra findAvailables calls
+    }
+
+    Bool sallgood = true;
+    for (PocketPtr ngb = cPP_SELF; ngb <= cPP_EAST; ++ngb) {
+      if (!findAvailable(ngb))
+        sallgood = false;
+    }
+
+    mAvailablesFound = true;
+    return sallgood;
+  }
+
+  /** true if pocket good, false if the pocket's unstable.
+   */
+  Bool findAvailable(PocketPtr ptr) {
+    EventWindow ew;
+    Random random;
+    if (ptr > cPP_EAST) { Fail f; f.fail("BAD ARG PTR"); }
+    RectIterator ri;
+    if (mPocket.initIterator(ri, ptr, true))
+      mPocketIterable[ptr] = true;
+    else return false;
+
+    Atom & ctr = ew[0];
+    SN randemp = SN.maxof;
+    Unsigned pocketsize, empcount, inaccesscount, uscount;
+    SN ussn = SN.maxof;
+    while (ri.hasNext()) {
+      ++pocketsize;
+      C2D n = ri.next();
+      if (!ew.isAccessible(n)) { ++inaccesscount; continue; }
+      Atom & a = ew[n];
+      if (a is Empty) mEmptySNs[ptr].add(ew.getSiteNumber(n));
+      else if (ctr as D1Pocketable) {
+        if (a as D1Pocketable) {
+          if (ctr.inMyGroup(a)) {
+            mUsSNs[ptr].add(ew.getSiteNumber(n));
+          }
+        }
+      }
+    }
+
+    // Stash findings
+    mPocketSize[ptr] = pocketsize;
+    mPocketFull[ptr] = pocketsize - mEmptySNs[ptr].count();
+    mPocketInaccessible[ptr] = inaccesscount;
+    return true;
+  }
+
+}
+
+quark D1Pocketable : Intender + DTU {
+
+  //// D1Pocketable API
+
+  /** Determine if a another D1Pocketable is related to me
+
+      Determines what counts as 'us' in mPocketUsCount
+
+      By default, this returns \c true if and only if self and other are
+      identical concrete classes
+   */
+  virtual Bool inMyGroup(Self & other) {
+    ClassUtils cu;
+    return cu.getClassId(self) == cu.getClassId(other);
+  }
+
+  /** Perform any patch-related activities, when given the chance to
+      do so by a QHardCell. \returns true if (eventwindow structural)
+      modifications were made, otherwise false.
+
+      By default this does no work and returns false.
+   */
+  virtual Bool updatePatch(QHardCellState & hcs, QHardCell & hc) {
+    mD&&pR("D1UPTCH10");
+    PatchState & ps = hcs.getPatchState();
+    if (!ps.mValid) return false;
+    mD&&pR("D1UPTCH11");
+    mD&&pR(ps);
+    mD&&pR("D1UPTCH12");
+
+    if (ps.mPCount > 0u) {      // If any pocketables found
+      mD&&pR("D1UPTCH13");
+      mD&&pR(ps.mPSN);
+      EventWindow ew;
+      Atom & a = ew[ps.mPSN];   
+      mD&&pR(a);
+      if (a as TQDSControl) {            // Check if locked down
+        mD&&pR("UPTCH14");
+        if (a.mLockedDown) return false; // No rules at the patch
+        mD&&pR("D1UPTCH15");
+      }
+    }
+
+    PatchRules pr;
+    pr.takeDebug(hc);
+    return pr.tryRandomRule(ps);
+  }
+
+  //// D1Pocketable SERVICES
+
+  PocketPtr clockwise(PocketPtr from) {
+    which (from) {
+    case cPP_WEST:  { return cPP_NORTH; }
+    case cPP_NORTH: { return cPP_EAST; }
+    case cPP_EAST:  { return cPP_SOUTH; }
+    case cPP_SOUTH: { return cPP_WEST; }
+    otherwise: { return from; }
+    }
+  }
+
+  PocketPtr counterclockwise(PocketPtr from) {
+    which (from) {
+    case cPP_WEST:  { return cPP_SOUTH; }
+    case cPP_SOUTH: { return cPP_EAST; }
+    case cPP_EAST:  { return cPP_NORTH; }
+    case cPP_NORTH: { return cPP_WEST; }
+    otherwise: { return from; }
+    }
+  }
+
+  PocketPtr reversePocket(PocketPtr ptr) {
+    if (ptr == cPP_NULL || ptr == cPP_SELF) return ptr;
+    if (ptr > cPP_EAST) { Fail f; f.fail("BAD PTR"); }
+    return (PocketPtr) (5u - ptr);
+  }
+}

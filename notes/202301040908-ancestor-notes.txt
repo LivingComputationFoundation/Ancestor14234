@@ -1,0 +1,2785 @@
+{192}  -*-  mode: text; fill-column: 50;  -*-
+[0:
+
+Wed Jan  4 09:08:44 2023 OK, with 300KB text in
+the previous 'spike' notes file, I think it's time
+for a fresh one here.
+
+Nominal goal is: Improving the ancestor, where
+that includes mostly physics changes as well as
+ancestor code rewrites.
+
+Going to need a name for the ancestor assembly
+language at some point, here.
+
+:0]
+[1:
+
+Wed Jan  4 09:11:07 2023 So, physics changes, off
+the top of my hand, GO:
+
+ - Redo TQDS to have a 'lockdown mode' meaning no
+   more configuration changes at all, no
+   exceptions.
+[8: Thu Jan  5 01:42:06 2023
+
+ - DiamondCutter should die quickly out of pocket
+
+:8]
+
+ - Could we think of some kind of 'Double Density
+   Chain', that would attach a second, loose,
+   pocket atom to each LX atom? But then swapping
+   becomes way harder.
+[3: Wed Jan  4 09:27:58 2023
+
+ - Xplit back off around QMembrane
+
+
+
+:3]
+[2:
+
+Wed Jan  4 09:18:58 2023 What about adding maybe
+two bits to PocketChain.. Or what about
+retargeting a PocketPtr state to allow
+self-pointing?
+
+Or could systematic use of cPP_SELF just do that
+already, with no enum change? A cPP_SELF in a
+cBODY_DOWN slot needs to match up with a cPP_SELF
+in a cBODY_UP slot in the same pocket.
+
+That would also allow us to have odd-length loops,
+via like
+
+         *-----*-----*
+         | A   |  C  |
+         |  B  |     |
+         * ----*-----*
+
+with
+  A down = SELF, up = EAST
+  B down = EAST, up = SELF
+  C down = WEST, up = WEST
+
+and that's all unambiguous.
+
+I suppose we might say only one link in a DSP,
+though.. Or we could say the upstream link is the
+'official' one for execution purposes when there's
+two links in a DSP.
+
+[4:
+
+Wed Jan  4 09:49:37 2023 Could render the upstream
+link a little bigger, and the downstream link a
+little smaller, when they're both in the same
+pocket..
+[5:
+
+Wed Jan  4 11:23:17 2023 I'm really thinking now's
+kind of the time for an 'ambitious' reworking like
+this. I'm thinking maybe a new name, like Link or
+QLink or just CL for 'chain link', or something
+pretty fundamental, and build it up in parallel to
+PocketChain until we can cut over..
+
+But, today's Work Wednesday out in the world. Got
+to get to it.
+
+:5]
+:4]
+
+:2]
+
+:1]
+[6:
+
+Thu Jan  5 01:34:38 2023 OK, could we start a new
+file and start to see what shaping up Double
+Density Chain might involve?
+
+Actually wait: Are we committed here? Did we
+fricken stash Ancestor1312 anywhere? Well, it's on
+the keymaster for sure; we can get it from there.
+
+Probably should commit 1312 as a separate dir, in
+my continuing abuse of git, and then feel better
+about moving on here.[7:
+
+Thu Jan  5 01:37:14 2023 Um Ancestor13 hasn't even
+been added. Maybe we can go on to Ancestor14 now
+and retroactively add Ancestor1312 when we pull it
+off the keymaster.
+
+:7]
+
+:6]
+[9:
+
+Thu Jan  5 02:00:34 2023 OK, here we are in
+Ancestor14.
+
+:9]
+[10:
+
+Sat Jan  7 03:14:53 2023 Aand now it's over half a
+week since T2sday and we haven't written a line of
+code.
+
+:10]
+[11:
+
+Sat Jan  7 11:11:25 2023 OK we've started making
+D1D.ulam, for 'double 1D' chain, and
+D1Pocketable.ulam with D1PocketableState, for
+doing pocket analysis without assuming single
+occupants. Made
+
+  transient D1SNs
+
+to hold 0-6 SNs (and avoid needing a 2D array) and
+D1Pocketable uses them to record the empties and
+D1Pocketables in each pocket.
+
+Just now, tried making Membrane inherit from
+D1Pocketable instead of Pocketable..[12:
+
+Sat Jan  7 11:15:05 2023 And hmm that just built
+clean.. That was way too easy a beginning.. Does
+it run? [13:
+
+Sat Jan  7 12:39:42 2023 'pears it do..
+[14:
+
+Sat Jan  7 15:27:31 2023 So, some more steps, what
+shall we try now? Try swapping D1Pocketable for
+Pocketable in more places, and see how it goes?
+That's not the development plan I was imagining,
+but... [15:
+
+Sat Jan  7 15:32:55 2023 Well, made more stuff
+D1PocketableState instead of PocketableState.. and
+it still appears to be building. Am I not doing
+what I think I'm doing?
+[16:
+
+Sat Jan  7 16:31:48 2023 Well hmm, I appear to
+have removed Pocketable.ulam entirely and I'm now
+building and apparently running.
+
+So I guess the claim would be I need to climb
+higher in the stack now and break something else?
+[17:
+
+Sat Jan  7 23:43:43 2023 Well not quite. Had/have
+some bugs - currently in SW3Packet execution - due
+to replacing
+
+   Pocketable.mPocketEmpty[ptr]
+
+calls with
+
+   D1Pocketaqble.mEmptySNs[ptr].pick()
+
+calls. The problem is the former is idempotent but
+the latter is not. How shall we handle this?
+
+ - Memoize pick() to make it idempotent
+
+ - Make D1Pocketable.mPocketEmpty[ptr] = ..pick()
+
+[18:
+
+Sun Jan  8 00:04:52 2023 Memoized pick(). (Second
+option didn't actually make sense.. so of course
+I tried it first.)
+
+[19:
+
+Sun Jan  8 01:43:03 2023 Everything seems to be
+working okay now.. but haven't quite gotten to
+DiamondCutting, so can't be completely sure.
+[20:
+
+Sun Jan  8 06:23:33 2023 OK I came back to
+multiple diamonds so I think diamond cutting is at
+least plausible too.
+
+I guess maybe Segment.ulam could be the next stop?
+[21:
+
+Sun Jan  8 06:25:37 2023 OK so it looks like
+Segment.findMates(..) might be similar to
+Pocketable.findAvailables(..) - where we didn't
+automatically call it but ended up always wishing
+we had?
+
+[22:
+
+Sun Jan  8 06:32:44 2023 Looking at Segment.ulam
+
+ - There's both
+     SegmentState.findMate(Segment &, BodyDir)
+   and
+     Segment.findMates(SegmentState &)
+
+ - The latter calls the former but not reverse
+
+ - The former appears to have at least some
+   support for both ends of a Segment being in the
+   same pocket.. at least, there's
+
+          Bool bothHere = themp == 0u && ngb == 0u;
+
+   that is one justification for the comment
+
+         // are they pointing back at us?
+
+Should we maybe try to make a spike minimal
+D1PocketChain thing that grows a double-density
+worm, and see what happens?[23:
+
+Sun Jan  8 07:45:20 2023 Well, so I've got two
+D1SwapWormHC3 sitting in the same pocket, as an
+open chain linked to each other via cPP_SELF, and
+they appear to be diffusing around each other okay
+and not doing much else. Is that what I expected?
+[24:
+
+Sun Jan  8 07:47:15 2023 What makes a
+D1SwapWormHC3 grow? Ah.. we made some 'growth
+inducers' didn't we? But I think they're
+SwapWormHC3-specific..[25:
+
+Sun Jan  8 08:29:03 2023 Well, having D1SwapWormHC3
+and SwapWormHC3 is getting to be a pretty big
+pain.
+
+I think it's time to point SwapWormHC3 at the D1
+stem and see how much blows up.
+[26:
+
+Sun Jan  8 09:34:08 2023 OK so we can inject grow
+commands into a pair of SW3 in the same pocket and
+have the upstream end grow. But the upstream end
+never grows into the same pocket even if it could;
+why is that?[27:
+
+Sun Jan  8 10:07:46 2023 ..because tryGrowOrMove
+was rejecting sites that contained self.. Now
+SW3 is growing into self and ngbs randomly and
+seems happy enough. Can we delete D1SwapWorm.ulam
+completely? [28:
+
+Sun Jan  8 10:16:47 2023 Can, did.
+
+Next stop might be reviewing the ChainRule stuff
+(and then the PatchRule stuff) to see what happens
+on existing rules, given double occupancy, and on
+new rules to exploit double occupancy.
+
+ChainRule first: We don't expect any new rules
+there, but we want existing rules to handle
+DO.[29:
+
+Sun Jan  8 10:20:43 2023 Seems like ChainRule
+might be mostly good. It just follows
+mPocketPtrs[]
+
+So on to take a look at PatchRule.ulam?[30:
+
+Sun Jan  8 11:19:51 2023 So, PatchRulePattern has
+four PRPockets -
+
+  PRPocket mPRPockets[PocketNum.maxof + 1u]; //< In 'logical CW' order
+
+each of which appears to have capacity for a
+single codon? -
+
+    quark PRPocket + DTU + QDebugUtils + Fail {
+      PocketUse mPocketUse;
+ ..
+      ChainType mCodonType;         //< Type of codon if cPRPU_CODON
+      PLType mUpPLT;
+      PLType mDownPLT;
+
+So that's going to be a big problem, right?
+
+..Well, there's a type still unused
+
+      typedef Unsigned(2) PocketUse;
+      constant PocketUse cPRPU_EMPTY = 0u; //< Pocket must be empty
+      constant PocketUse cPRPU_CODON = 1u; //< Pocket must contain only one codon
+      constant PocketUse cPRPU_RESRV = 2u;
+      constant PocketUse cPRPU_UNCHK = 3u; //< Pocket content is entirely unchecked
+
+could it be like
+
+      constant PocketUse cPRPU_CPAIR = 2u; //< Pocket must contain two linked codons
+
+But I really think things are worse than that,
+because the positional notation implied by the
+mPRPockets array really goes out the window.
+
+I notice there's a possible distinction between
+allowing a linked pair of codons in a single
+pocket and allowing two unlinked codons in a
+single pockets. Is the latter even coherent?
+
+Seems like maybe not:
+
+   +------+------+------+
+   | A1-> |A2    |      |
+   | B1-> || B2->|  B3  |
+   |      |v     |      |
+   +------+------+------+
+          |      |
+          | A3   |
+          |      |
+          +------+
+
+we have no way of knowing that A2 is supposed to
+go with A1 and B2 is supposed to go with B1.
+
+So I think it's fair to say that two codons should
+be in a single pocket only when they are linked to
+each other.
+
+If we put a 'logical CW index' in each PRPocket,
+we could mention the same pocket more than once?
+And the existing rules would become a special case
+where those indices were 0,1,2,3 ?
+[31:
+
+Sun Jan  8 11:33:50 2023 And I guess if we only
+allow duplications around the 'logical CW' it
+makes things still easier maybe?
+
+ 0,1,1,2
+ 0,0,1,2
+ 0,1,2,2
+
+like that? Although then there's a temptation to
+expand the array so we could match
+
+ 0,0,1,2,2,3
+
+or whatever.
+
+But we've also got to do that mapping from
+'logical' to 'phsical' patch indices.
+
+That appears to just use PocketDir.. which we'd
+still know? But.. Need to look in PatchState.[32:
+
+Sun Jan  8 11:40:36 2023 OK, in the middle of the
+gigantic PatchState.init(..), there's a whole ew
+iteration that considers every pocket coord.
+
+..And it counts all the segments it finds in a
+given pocket (represented by its PocketDir), but
+then it randomly selects one to store in
+
+              mSegmentSN[pd] = sn;
+              mBodyUpPtr[pd] = a.mPocketPtrs[cBODY_UP];
+              mBodyDownPtr[pd] = a.mPocketPtrs[cBODY_DOWN];
+
+[33:
+
+Sun Jan  8 17:53:30 2023 Could we use D1SNs to
+store mSegmentSNs instead?
+
+And if we can, what about those body ptr arrays?
+[34:
+
+Sun Jan  8 18:04:46 2023 Well, a couple
+things. For starters, they don't seem to be used:
+
+    ./PatchState.ulam 21:  PocketPtr mBodyDownPtr[PocketDir.maxof + 1u]; // or cPP_SELF if no mSegmentSN
+    ./PatchState.ulam 181:          mBodyDownPtr[pd] = a.mPocketPtrs[cBODY_DOWN];
+    ./PatchState.ulam 198:          print(getPocketPtrName(mBodyDownPtr[pd]));
+
+and for enders, that 'or cPP_SELF' comment is
+pretty scary. Suppose we make both those arrays go
+away?
+
+[35:
+
+Sun Jan  8 18:06:41 2023 Ok diked out for
+now. Everything still seems to work.
+
+[36:
+
+Mon Jan  9 01:01:11 2023 So, I'm thinking maybe we
+can get away with adding
+
+  constant PocketUse cPRPU_CPAIR = 2u; //< Pocket must contain a bonded codon pair
+
+and keeping most of the PatchRule structure
+intact. We'd add enough constraints on the pair so
+that we could infer what rules involving them has
+to mean.
+
+Hell let's just try it and see what happens.
+[37:
+
+Mon Jan  9 01:44:07 2023 Guess it's like there's
+an upstream and a downstream in each pair, since
+they have to be bonded to each other. If they're
+double-bonded to each other then the
+upstream/downstream matching could go either wa
+and presumably we'd randomize which we pick.
+
+But I think we do want separate codon types for
+each of the pair
+
+..which does push me back towards wanting to allow
+repeated PocketDirs instead of the pair
+concept. Saying that after all the PocketDirs
+'just' tell us where to look to find the next
+codon for a patch match, so why couldn't we say
+'look here again'
+
+..which then does push me back toward crawl before
+fly and let's try to get the pair thing going,
+even with big limitations, and then consider
+relaxing those limitation if and when we have
+enough experience to know what we want.
+[38:
+
+Mon Jan  9 11:10:22 2023 Well I got it building
+again after switching over to
+
+  D1SNs PatchState.mEmptySNs[PocketDir.maxof + 1u];
+  D1SNs PatchState.mSegmentSNs[PocketDir.maxof + 1u];
+
+and things still seem to be working. The new
+cPRPU_CPAIR is defined but isn't used in any rules
+yet, and we have a
+
+  Bool PatchRule.matchCPAIR(D1SNs & sns, PocketDir p, PatchState & ps, PatchRulePatternBinding & prpb)
+
+that is unimplemented.[39:
+
+Mon Jan  9 14:05:13 2023 OK, so can we make up a
+first CPAIR-involved rule to drive development?
+
+[40:
+
+Mon Jan  9 14:46:17 2023 Try again here. Rule
+please.
+
+    /** Implement:
+        <pre>
+
+         ->A  |  C->        ->A -> B
+            B->       ==\        |  C->
+          ----*----   ==/    ----*----
+              |                  |
+           .  |  .            .  |  .
+
+        </pre>
+     */
+
+Well, let's just give it a try shall we.
+[41:
+
+Mon Jan  9 15:38:14 2023 OK we've gotten to our
+first explicit fail for unimplemented code: We
+need
+
+  Bool PRPocket.matchCPAIR(D1SNs & sns, PocketDir p, PatchState & ps, PatchRulePatternBinding & prpb)
+
+[42:
+
+Mon Jan  9 16:02:36 2023 So I guess we're going to
+say that we want the PatchState.mPSN to be the
+'up' member of a CPAIR (meaning it points
+cBODY_DOWN to the other member of the pair), even
+though that's going to throw away half of the
+potential matches that manage to get to this
+point.. So Be It.[43:
+
+Mon Jan  9 16:07:08 2023 But wait no: mPSN only
+applies to the 'anchor' of a patch rule, but we
+can be talking about finding a CPAIR in any
+PocketDir. So we can't presume a relationship
+between mPSN and the bodyup or -down member of a
+pair. [44:
+
+Mon Jan 9 16:42:14 2023 OK, we're making some
+progress but our experimental method is starting
+to limit us. Specifically, we've been using Sf to
+seed a SwapWorm pair in a single pocket, and going
+from there. Problem is the SWs are all cDS_DUMB,
+which is fine for the UP member to match
+.mUpPairCodonType = cCPAT_Y, but no good for the
+DOWN member to match .mDownPairCodonType =
+cCPAT_S, which (rightfully) demands swappability.
+
+How can we set up to test this stuff? Do we have a
+'change drive status' probe atom?
+[45:
+
+Tue Jan 10 00:45:57 2023 OK we added I7 to convert
+a SW chain to an EC chain, and now we're seeing
+matchCPAIR apparently match successfully. Is it
+supposed to save anything it's learned? Depends
+what's supposed to happen downstream, I guess.
+
+Which is?
+
+ - We've gone through PatchRule.match(..)
+
+ - Which perhaps we got to via
+   PatchRule.tryRule(ps)
+
+ - Which will go on to call PatchRule.evaluate(..)
+
+ - So we need to support CPAIR evaluation next?
+ [46: Tue Jan 10 01:12:05 2023
+
+ - But evaluate(..) is delegated to rule
+   instances. So we need to provide CPAIR-related
+   services to help them do their own evaluations.
+
+Let's look at the instances.
+
+Each specific evaluate(..) knows what kind of
+PocketUse's they matched on, so if they didn't use
+cPRPU_CPAIR up front they don't have to worry
+about CPAIR evaluation now.
+[47:
+
+Tue Jan 10 01:14:52 2023 So existing
+cPRPU_CODON-based evaluate(..)s are using:
+
+PatchState.errorOfPocketChainInQuad(pd, Codon &)
+
+and pretty much just that, to evaluate matches. So
+could we have a two-Codon& version of that? Or
+could we evaluate each Codon& of a CPAIR
+separately and add stuff up?
+
+..seems like that's probably the idea to start
+with anyway. So now we would like convenient
+access to the UP and DOWN members of the CPAIR, so
+we can evaluate moving either or both of them, and
+how are we going to do that?
+
+Extra fields in PatchState that are only set up
+when we match a CPAIR?[48:
+
+Tue Jan 10 01:54:19 2023 Kinda seems like
+PatchRulePatternBinding might be the place for
+PatchRulePattern-related state? It's not quite
+right because the existing state is all about the
+transformation used to align the pattern with the
+patch, rather than the detailed results of
+matching any particular pocket.[49:
+
+Tue Jan 10 01:56:34 2023 But it dishes to
+PRPocket.match(..) - which is per-pocket,
+represented as mPRPockets[pd].
+
+It seems like we could add more fields to PRPocket
+with only a little bit of violence.[50:
+
+Tue Jan 10 03:19:30 2023 So ugh, lost what, over
+an hour finding out the new stuff was failing to
+match precisely because I told it not to match, in
+the new PatchRule_PAIRROLLDOWN. Doh.
+
+Consider creating a new ChainType meaning any
+codon at all, EC or not, any DSType, perhaps just
+!DSP. cCPAT_A for 'Any', maybe?
+
+So now we've finally hit the unimplemented fail in
+PatchRule_PAIRROLLDOWN.evaluate(..).[51:
+
+Tue Jan 10 03:52:53 2023 OK we're up to the fail
+in PatchRule_PAIRROLLDOWN.apply(..). But taking a
+nap first.[52:
+
+Tue Jan 10 08:23:40 2023 OK trying for
+apply(..). Noting I'm not sure we have a
+guarantee that just because
+
+   .mPocketUse = cPRPU_CODON, /*NE*/
+   .mCodonType = cCPAT_S,
+
+matched, there'll be an available empty space in
+the logical NE pocket? But apply(..) return Bool
+and we can apparently have apply(..) fail safely
+so planning on falling back on that if need be.
+[53:
+
+Tue Jan 10 09:32:58 2023 OK,
+PatchRule_PAIRROLLDOWN just worked correctly for
+the first time. Let's make PatchRule_PAIRROLLUP
+and see things start to bounce around in
+double-density land.
+
+(I do note that by limiting ourselves to bound
+pairs, we can't sprout an extension out sideways
+and back from a single codon, because we'd end up
+with two codons in one pocket that aren't pointing
+at each other.)
+
+(Another consequence is that solid runs of pairs
+are completely locked and immobile until one of
+the pairs on the ends decays. That's an exmple of
+the density-vs-flexibility tradeoff made flesh.)
+[54:
+
+Tue Jan 10 10:43:35 2023 OK,
+PatchRule_PAIRROLLDOWN seems to be working and we
+have a pair bopping back and forth between
+adjacent pockets. Need more rules.
+
+How about
+
+[55: Tue Jan 10 13:15:34 2023 Possibly perhaps
+DONE :55] - A Pair-creating EC injector PatchRule_CREATEEECPAIR
+
+[56: Tue Jan 10 13:59:51 2023 Apparently
+DONE :56] - A Pair-destroying EC extractor PatchRule_DELTEECPAIR
+
+ - A U-collapsing double-pair creator PatchRule_UCOLLAPSOR
+
+[57:
+
+Tue Jan 10 14:00:00 2023 Also finally cleaned up
+the PatchRules.chooseRule(..) stuff to do
+recasting instead of declaring everything and
+doing a giant switch.. [58:
+
+Tue Jan 10 20:25:53 2023 Well, the new double
+density rules seem to be working. Still need a few
+more anyway, but it's also getting to be time to
+start thinking about a TQDS redo to take better
+advantage of this stuff.
+
+(Could also think about a CPAIR RECORNER rule
+couldn't we?)
+
+Still need the U-collapsor and -expander rules.
+
+But thinking about TQDS is really what's up.
+
+ - ECs toward edges (store) vs ECs toward anchor
+   (run)
+
+ - Create pairs (store) vs decompose pairs (run)
+
+ - Stochastic hillclimb (run) vs strict hillclimb
+   (store)
+
+ - Remove ECs (store) vs add ECs (run)
+
+:58]
+
+:57]
+:54]
+:53]
+:52]
+
+:51]
+
+:50]
+
+:49]
+
+:48]
+
+:47]
+
+:46]
+
+:45]
+:44]
+
+:43]
+
+:42]
+:41]
+:40]
+
+:39]
+
+:38]
+:37]
+:36]
+
+:35]
+
+:34]
+:33]
+
+:32]
+
+:31]
+
+:30]
+
+:29]
+
+:28]
+
+:27]
+
+:26]
+
+:25]
+
+:24]
+
+:23]
+
+:22]
+
+:21]
+
+:20]
+:19]
+:18]
+:17]
+:16]
+:15]
+
+:14]
+:13]
+
+:12]
+
+:11]
+[59:
+
+Wed Jan 11 01:56:23 2023 OK have to break for a
+call; currently debugging a U-expander failure
+where it appears A and D are moving instead of B
+and C but for the life of me I can't see why.
+[60:
+
+Wed Jan 11 10:29:39 2023 It was because the new
+matchCPAIR was not actually checking mUpPLT and
+mDownPLT, allowing incorrect bindings to reach
+apply(..)
+
+:60]
+
+:59]
+[61:
+
+Wed Jan 11 10:34:42 2023 So, the new
+double-density stuff seems to be working
+sufficient for replication to start operating
+again.
+
+:61]
+[62:
+
+Wed Jan 11 10:49:44 2023 How about this as a quick
+hack: Every time a DS successfully executes an
+instruction, it checks for a root nearby and, if
+it finds one, resets the root's watchdog timer.
+
+And then we make the root timer quite a big more
+agressive than it currently is.
+
+How would this interact with successfully moving
+or not? Would moving reset the watchdog timer?
+Maybe no?
+
+But: Lack of movement might reflect a jammed-up
+grid which might impede execution progress which
+would then lead to grid pop.
+[63:
+
+Wed Jan 11 11:14:10 2023 Umm and there's also the
+slight problem that the mother root loses its DS
+at the end of the first copy. How would we deal
+with that in this new poppable grid world?
+
+Really we should be leaving behind a skeleton crew
+code that will continue to run the mother while
+the rest of the replication process continues.
+
+And that 'crew' should be the thing that
+implements the run-n-tumble that the old HC3 root
+did spontaneously.
+
+And it should subsume at least part of the
+function of the DiamondCutter stuff.
+
+:63]
+:62]
+[64:
+
+Thu Jan 12 03:01:32 2023 What about some kind of
+InterGoo, that would act as a temporary,
+symmetric, DEWLine extension? Idea is:
+
+ - If an MSensor sees an incompatible MSensor, in
+   addition to signaling it has some chance of
+   creating an InterGoo in between.
+
+ - InterGoo spawns more InterGoo like Xplit does,
+   except more locally and mildly.
+
+ - InterGoo erases itself once none of its support
+   reports seeing incompatible MSensors
+
+ - InterGoo causes contact warnings in all
+   MSensors that see it.
+
+So the idea is once two diamonds have come in
+contact distance and spawned InterGoo, the
+diamonds will continue having contact warnings in
+that/those directions until they're far enough
+apart for the InterGoo to decay. Hysteresis in
+contact warnings.
+
+The claim is this would greatly reduce the chance
+of simultaneous growth spurts causing diamonds to
+overrun each other and mess up.
+
+:64]
+[65:
+
+Thu Jan 12 08:33:45 2023 What about if DS released
+a keep-alive signal -- INTO THE HC3 GRID --
+whenever a stream operation was completed? And
+that signal would flow upstream to the root and
+reset the root's watchdog counter. A single
+'productivity' bit that moves upward to the root,
+OR-ing with its value upstream.
+
+So as long as any DS anywhere in the grid
+continues to go idle from a non-idle state, the
+diamond will be preserved.
+
+Which does mean that DS blocking now becomes
+life-threatening even if it seems clear that
+[66:
+
+Thu Jan 12 08:40:06 2023 What's our HG and Root HG
+budget look like these days? We saved a bunch of
+bits at one point recently, didn't we?[67:
+
+Thu Jan 12 08:41:10 2023 HardCellG has 24 bits
+unused. Wide open! RootHardCellG has 17 bits left
+- but it's still paying 10 for mDirs[2] which it's
+not using.[68:
+
+Thu Jan 12 08:46:20 2023 And QHardCellG is still
+paying 3 bits for the grow-grow-shift mToggleHack
+that we're no longer using.
+
+Let's take Unsigned(3) mToggleHack back, and
+replace it with Bool mProductivity instead.
+[70:
+
+Thu Jan 12 15:41:28 2023 mProductivity seems to be
+working.. switched it to an RXTimer but not really
+sure if that changes anything in expectation.
+
+:70]
+:68]
+
+:67]
+
+:66]
+:65]
+[69:
+
+Thu Jan 12 15:41:15 2023 Flag moved.
+
+:69]
+[71:
+
+Thu Jan 12 16:07:11 2023 OK, got Ancestor1312 off
+of the keymaster and committed
+T2Demos/demos/Ancestor1312.. For The Record..
+
+We're supposed to be on the TQDS redo now. Though
+it'll be cocktails and games before I know it here..
+
+:71]
+[72:
+
+Fri Jan 13 14:37:28 2023 So I made the
+RootHardcelLG watchdog be an RXTimer, and I've
+been vacillating about whether I think that's a
+mistake. My idea was that when producitivity did
+occur, with RXTimer we'd reset the hardest count
+and thus give the biggest boost to the live
+diamonds.
+
+But what seems to be happening is that
+productivity just keeps setting a 0 count back to
+0, giving no differential advantage - and then,
+eventually, everybody locks up roughtly
+simultaneously, and any timer difference between
+the zombies and the living is minimal as the
+living lock up against their own cell wells or
+size limits or whatever.
+
+I think I need to loosen the productivity
+criterion from going idle to the mere attempt to
+run an instruction? Simply getting to the point
+where DS can call perform(..) (or execute(..) or
+wherever it starts) is enough for productivity?
+
+That will catch the majority of zombies we are
+currently dealing with. It seems scary easy to get
+around, though..[73:
+
+Fri Jan 13 14:48:09 2023 Well it's execute(..) and
+we're now reporting producitivity for merely
+getting to the point of calling execute(..). We
+shall see..
+[74:
+
+Sat Jan 14 01:57:26 2023 So now we've got a
+'livelock' that the original mProducitivity would
+catch - the second ctor arm is blocked near the
+center by the unkilled MO buffer loop. Why the MO
+is unkilled is as yet unestablished..
+
+..but we have a video, so let's try to trace the
+events.
+
+20230113150957.mp4
+A 0:00 ::
+ LA 1:21 -> code lost 1:23 -> dead 1:42.
+ RA 1:21 ::
+  LRA 2:11 -> 2nd ctor arm blocked 2:18 -> EoU 4:07
+  RRA 2:11 -> dead 2:35.
+
+:74]
+:73]
+
+:72]
+[75:
+
+Sat Jan 14 09:05:43 2023
+
+Initial layout at start of ancestor code:
+
+DS: BG   TQDS: 0x4/false
+    RW
+
+LD layout
+  at DS deployment
+    DS: BW   TQDS: 0xF/true
+        GR
+  during RL
+    DS: BG   TQDS: 0x4/false
+        WR
+  after RL
+    DS: BG   TQDS: 0x4/true
+        RW
+  during SL
+    DS: BW   TQDS: 0x4/false
+        RG
+  after SL
+    DS: BR   TQDS: 0xE/true
+        GW
+
+  at start of ancestor code
+
+RD layout at start of ancestor:
+  at DS deployment
+    DS: BW   TQDS: 0xF/true
+        GR
+  during RL
+    DS: BG   TQDS: 0x4/false
+        WR
+  after RL
+    DS: BG   TQDS: 0x4/true
+        RW
+
+
+:75]
+[76:
+
+Sat Jan 14 12:33:44 2023 Been working on ChainRule
+temp propagation, and am close to concluding - as
+so often with my shit code - I have a deep
+backwardso with all sorts of compensations around
+it, now surfacing.
+
+In particular: In a rule like this:
+
+    /** CHAINRULE: SPREAD10: Y -> [X] -> EC  ==>  Y -> [EC] -> X */
+    transient ChainRule_SPREAD10 : ChainRule {
+
+I've (lately at least) been interpreting
+representations like this:
+
+    Y -> [X] -> EC
+
+as meaning "downbody of Y there's an X, and
+downbody of X there's an EC". And when that rule
+is translated thusly:
+
+        ChainPattern p = { cCPAT_Y, cCPAT_X, cCPAT_U };
+
+I read it the same way: "There's a Y, whose
+downbody points at an X (which is us), whose
+downbody points to a U."
+
+And that reading is supported by these comments:
+
+      typedef ChainType ChainPattern[3]; //< 0: body up, 1: us, 2: body down
+      typedef SN ChainMatches[3]; //< 0: body up, 1: us, 2: body down
+
+saying [0] is body up of [1] and [2] is body down
+of [1].
+
+We also have
+
+      //// LOGICAL POSITIONS ALONG A POCKETCHAIN RELATIVE TO US
+      typedef Unary(2) MatchCodePosition;
+      constant MatchCodePosition cMCP_PREV = 0u;
+      constant MatchCodePosition cMCP_HERE = 1u;
+      constant MatchCodePosition cMCP_NEXT = 2u;
+
+as names for the indicies of a ChainPattern or
+ChainMatches. Which implies that cMCP_PREV must be
+upbody of HERE, and cMCP_NEXT must be downbody of
+HERE.
+
+But then we have
+
+      /** \returns SN.maxof if unreachable
+          \returns SN.maxof-1 if reachable but no match
+          \returns <41 as SN of successful match
+       */
+      SN codeAt(PocketChainState & ss, ChainType code, MatchCodePosition mcp) {
+ ..     SN sn;
+        which(mcp) {
+        case cMCP_PREV: {
+ ..       sn = ss.mEWSNMate[Segment.cBODY_DOWN];
+        }
+        case cMCP_HERE: {
+ ..       sn = ss.mEWSNSegment; // WON'T BE 0 ON INDIRECT ACTION
+          if (sn != 0u) fail(__FILE__,__LINE__); // CHECK THAT ^^ COMMENT
+        }
+        case cMCP_NEXT: {
+ ..       sn = ss.mEWSNMate[Segment.cBODY_UP];
+        }
+
+
+which seems to pretty explicitly state that
+cMCP_PREV is downbody of here, and cMCP_NEXT is
+upbody of here.
+
+Gah.
+
+So which is it? Is there any chance that
+.mEWSNMate[] has some kind of reverse
+interpretation? [77:
+
+Sat Jan 14 13:40:22 2023 Doesn't seem likely:
+
+      //// SegmentState SERVICES
+      Segment.MateStatus findMate(Segment & seg, Segment.BodyDir bd) {
+        PocketPtr ngb = seg.mPocketPtrs[bd];
+ ..     if (!mPocket.initIterator(ri, ngb, true))
+ ..               matesn = ew.getSiteNumber(n);     // good candidate
+        mEWSNMate[bd] = matesn;
+ ..     return Segment.cMATE_OK;
+
+ - Goes to mPocketPtrs with given body dir
+ - Inits an iterator in the given pocketptr
+ - Stashes in the corresponding body dir
+
+So findMate(seg, cBODY_UP) will stash the SN of a
+Codon upstream of seg in mEWSNMate[cBODY_UP].
+
+[78:
+
+Sat Jan 14 13:43:59 2023 Well so let's look at all
+the ChainRules and see which ones we think would
+really care about body up vs down.
+
+:78]
+
+:77]
+
+:76]
+[79:
+
+Sat Jan 14 13:45:03 2023
+
+ChainRule_INSERT is symmetric:
+    ChainPattern p = { cCPAT_N, cCPAT_EC, cCPAT_N };
+ so NO
+
+ChainRule_DELETE is also symmetric:
+    ChainPattern p = { cCPAT_N, cCPAT_Y, cCPAT_N };
+
+ChainRule_NEXT is not symmetric:
+    ChainPattern p = { cCPAT_D, cCPAT_X, cCPAT_N };
+but it's one of the ones we're having trouble
+with..
+
+chainrule_PREV not symmetric ditto
+    ChainPattern p = { cCPAT_N, cCPAT_X, cCPAT_U };
+and trouble ditto
+
+ChainRule_GENL_ALONE is symmetric
+    ChainPattern p = { cCPAT_EC, cCPAT_Y, cCPAT_EC };
+
+ChainRule_SPREAD10 is not symmetric
+    ChainPattern p = { cCPAT_Y, cCPAT_X, cCPAT_U };
+ChainRule_SPREAD11 is not symmetric
+    ChainPattern p = { cCPAT_D, cCPAT_X, cCPAT_Y };
+ChainRule_COMPACT10 is not symmetric
+    ChainPattern p = { cCPAT_X, cCPAT_U, cCPAT_FC };
+ChainRule_COMPACT11 is not symmetric
+    ChainPattern p = { cCPAT_FC, cCPAT_D, cCPAT_X };
+ChainRule_RELAXEMPTY is not symmetric
+    ChainPattern p = { cCPAT_U, cCPAT_D, cCPAT_N };
+but it also appeared to be backwards so it's
+currently disabled. Hah!
+
+ChainRule_ALLEMPTY is symmetric
+    ChainPattern p = { cCPAT_FC, cCPAT_EC, cCPAT_FC };
+ChainRule_LONEEMPTY is symmetric
+    ChainPattern p = { cCPAT_Y, cCPAT_EC, cCPAT_Y };
+ChainRule_CROWDGROW (deprecated) is symmetric
+    ChainPattern p = { cCPAT_N, cCPAT_EC, cCPAT_N };
+
+[80:
+
+Sat Jan 14 13:52:04 2023 Well, so that was
+enlightening. Suppose we:
+
+ - Reverse _PREV and _NEXT in codeAt(..)
+ - Make _RELAXEMPTY look sensible and reenable.
+
+and see what that all looks like?
+
+There'll probably other compensating bugs but
+we'll have to trip over them I guess.
+
+[81:
+
+Sat Jan 14 14:02:37 2023 Well, the passage on the
+xfer cable looks a LOT better gah yah!
+[82:
+
+Sat Jan 14 14:05:25 2023 Let's hunt for codeAt(..)
+callers.. [83:
+
+Sat Jan 14 14:08:12 2023 Just the one call, it seems.
+
+:83]
+
+:82]
+:81]
+:80]
+
+:79]
+[84:
+
+Sat Jan 14 14:39:39 2023 We seem to be having some
+trouble getting stuff in and out of pockets..[85:
+
+Sat Jan 14 14:53:23 2023 OK woah something's
+shredding the code loop order!
+
+[86:
+
+Sat Jan 14 14:56:50 2023 OK we have an EC-centered
+event that's ripping the Ld out of a DSP.
+
+THAT'S NOT GOOD.
+
+Specifically, a DOWN temp that is upstream of Ld
+is swapping with Ld, leaving itself in the DSP and
+the Ld going WTAF.
+
+[87:
+
+Sat Jan 14 14:59:48 2023 So the _NEXT rule has
+
+    ChainPattern p = { cCPAT_D, cCPAT_X, cCPAT_N };
+
+[88:
+
+Sat Jan 14 15:04:20 2023 Got lucky on a trace
+redo:
+
+    20230114150357-41030: 11655AEPS [1C51317]MSG: print: "CRFAR1110"
+    20230114150357-41031: 11655AEPS [1C51317]MSG: print: "ChainRule_COMPACT11"
+    20230114150357-41032: 11655AEPS [1C51317]MSG: print: "CR_CM1110"
+    20230114150357-41033: 11655AEPS [1C51317]MSG: print: "CRFAR12"
+    20230114150357-41034: 11655AEPS [1C51317]MSG: print: "FRSTB13"
+    20230114150357-41035: 11655AEPS [1C51317]MSG: print: Bool(3) 0x7 (true)
+
+[89:
+
+Sat Jan 14 15:08:00 2023 And _COMPACT11 says
+
+    ChainPattern p = { cCPAT_FC, cCPAT_D, cCPAT_X };
+
+which only matches the current situation if
+cCPAT_X somehow matches inDSP, which it's not
+supposed to. So looking backwards through
+dbg..[90:
+
+Sat Jan 14 15:13:06 2023 Ah, in PocketChainState:
+
+      Bool isInDSPBodyDir(BodyDir bd) {
+        return isInDSP( bd == cBODY_UP ?
+                        cMCP_NEXT :
+                        cMCP_PREV );
+      }
+
+and
+
+PocketChain.ulam:77:    mInDSP[cMCP_PREV] = p.isDSP(mPocketWithMate[cBODY_DOWN]);
+
+and other places in PocketChain too..
+
+:90]
+
+:89]
+:88]
+:87]
+
+:86]
+
+:85]
+
+:84]
+[91:
+
+Sat Jan 14 15:30:55 2023 Umm now we're executing
+the program backwards?
+
+THAT'S NOT RIGHT.
+
+[92:
+
+Sat Jan 14 15:32:20 2023 OK, so at the moment, Ld
+appears to be inserting the next instruction
+downstream of itself.. so that would mean
+execution wants to roll upstream to advance to the
+next instruction? Is that what we've got?[93:
+
+Sat Jan 14 15:37:43 2023 Well, we have:
+
+  Void markDSPForRotationForward(DiamondSequencerState & dss, SN dssn, ProcUnit pu) {
+    markDSPForRotation(dss, dssn, pu, cDSTATUS_UPWD);
+  }
+
+which associates "forward to next insn" with
+ProcStatus _UPWD.[94:
+
+Sat Jan 14 15:40:45 2023 And Codon.stabilize(..)
+does like
+
+        if (mOurPS == QDirStatusMap.cDSTATUS_UPWD) {
+          // FOR cDSTATUS_UPWD: //< Needs roll toward body up (temp down)
+ ..
+ ..       // (2) if reachable layout is        [D] -> X
+          //     switch to                     [X] -> D
+          //     and set _IDLE
+
+          if (c.mDSType == c.cDS_DOWN) { // if [D]
+            print("CdnStab16");
+            SN dnsn = self.mEWSNMate[Segment.cBODY_DOWN];
+            if (dnsn == 0u || !ew.isAccessible(dnsn)) { Fail f; f.fail(__FILE__,__LINE__); }
+            Atom & d = ew[dnsn];
+            if (d as PocketChain) {
+ ..               ds.setQuadrantIdle(mQuadrant);     // So set our quadrant idle
+ ..             c.doDSPSwapOut(self, d, dnsn);
+
+
+which seems to say that rolling forward is going
+to swap whatever's downstream into the DSP. But if
+the Loader is pushing codons onto downstream,
+that's going to mean LIFO execution. Maybe
+smallest hack is have Ld push onto upstream? Will
+we not still be broken in the out generations?
+[95:
+
+Sat Jan 14 16:03:51 2023 Well, trying having Ld
+push onto body_up.. We shall see.
+
+:95]
+:94]
+
+:93]
+
+:92]
+
+:91]
+[96:
+
+Sun Jan 15 00:42:39 2023 OK we are seriously
+facing TQDS mods now. With the codeAt PREV/NEXT
+fixes, things are working quite a bit more as
+expected.
+
+First thing I want is homeostatic EC regulation:
+Have a shared bit saying more-ECs/less-ECs, and
+have a DSP codon set it when it has no EC ngbs,
+and clear it when it has two EC ngbs, and leave it
+alone othewise.
+
+And I want each PatchRule to have some declaration
+about its impact on ECs
+
+  Int deltaEC(..)
+
+or something, so we could maybe do a pre-pass over
+the rules to filter on that.
+
+[97:
+
+Sun Jan 15 01:37:42 2023 I had forgotten that
+'ChainRulesFreeStab' actually tries five different
+rules each (applicable) event and picks randomly
+among the matches. If we were willing to pay that
+kind of load in PatchRules we could do the same.
+
+:97]
+
+:96]
+[98:
+
+Sun Jan 15 02:30:22 2023 As a first step anyway,
+I'm suspecting that setMinDSHopsCommand(true) in
+combination with the EC-hysteresis idea might do
+pretty well. In my fantasy it might be all we need
+in addition to target quadrants..
+
+So let's see what it might take.
+
+[99:
+
+Sun Jan 15 02:32:58 2023 TQDSControl is currently
+at 14 bits, and we'd push it to 15 with
+mECsGood. Which seems fine at this point, and if
+it all works magically we could perhaps reclaim
+like mMinDSHopsCommand later.[100:
+
+Sun Jan 15 02:55:12 2023 OK, we've wired in
+TQDSControl.mECsGood for the basics. We need Codon
+to set it appropriately, and some way for
+PatchRule picking to take it into
+consideration.[101:
+
+Sun Jan 15 02:59:23 2023 Could we modify mECsGood
+inside TQDSControl.stabilizeCommandAnchor(..)?
+That's called on the 'right kind of people'
+anyway. It currently appears to do nothing,
+though.. [102:
+
+Sun Jan 15 03:16:05 2023 OK, it appears mECsGood
+is now getting set and cleared as intended. We
+'just' need someone to care about its value.
+
+I guess for starters, where is mMinDSHops cared
+about? [103:
+
+Sun Jan 15 03:23:38 2023 Int
+TQDSControl.errorFromDSHops(..) simply returns 0
+when mMinDSHopsCommand is not set.
+
+[104:
+
+Sun Jan 15 03:26:48 2023 I guess maybe we want a
+separate error channel for this? errorFromECs?
+
+[105:
+
+Sun Jan 15 03:28:37 2023 So about errorFromDSHops,
+though.. I thought that was going to reward moves
+that 'reduced' dshops in some fashion.. but it
+appears just to penalize moves that are further
+from the DS, whether those moves are helpful or
+not.
+
+Is that really true? ..errorFromDSHops takes a
+'dshops' parameter.. ..which it gets from
+PatchState.mDSHops[].. [106:
+
+Sun Jan 15 03:32:32 2023 ah: and errorFromDSHops
+is called from TQDSControl.chainError(..), which
+is called from
+PatchState.errorOfPocketChainInQuad(..), which is
+called on each PocketChain in a quadrant by
+PatchState.errorInQuad(quad) [107:
+
+Sun Jan 15 03:35:23 2023 ..which is called by
+nobody??
+[108:
+
+Sun Jan 15 03:36:18 2023 Umm it appears not.. But,
+changing mMinDSHopsCommand does change loop
+behavior.. how does that happen?[109:
+
+Sun Jan 15 03:38:52 2023
+
+ - LXRemapLoop sets mMinDSHopsCommand in a few
+   places..
+
+ - TQDSControl.errorFromDSHops cares about it.
+
+ - TQDSToggleMin flips it
+
+ - TQDSControl.errorFromDSHops is called from
+   TQDSControl.chainError and that is all.
+
+ - chainError is called from
+   PatchState.errorOfPocketChainInQuad and that is
+   all
+
+ - and errorOfPocketChainInQuad is called from all
+   over the place, in PatchRule.evaluate(..)
+   methods. How did I miss that the first
+   time?[110:
+
+Sun Jan 15 03:45:31 2023 Because I ran past
+errorOfPocketChainInQuad itself to errorInQuad,
+and missed all its other calls. Doh. OK.
+
+[111:
+
+Sun Jan 15 03:47:24 2023 So where am I?
+
+So: The various evaluate(..) methods call
+errorOfPocketChainInQuad multiple times, using
+their knowledge of what the rule is going to do,
+to come up with an overall score. So, for example,
+a rule like RECORNER, that in some situation
+clears a farther-out quad while occupying a
+closer-in quad, should end up with a negative
+penalty.
+
+So that implies we should have a errorFromECs or
+something, which returns 0 unless the Codon in
+question is an EC, and returns +EC_PENALTY if
+!mECsGood, and returns -EC_PENALTY if mECsGood. Or
+something like that.[112:
+
+Sun Jan 15 03:53:18 2023 HOWEVER: We note that
+evaluate(..) functions have been quite sloppy
+about what PocketChain& they actually pass to
+errorOfPocketChainInQuad! With bad bad stuff like:
+
+    penalty += ps.errorOfPocketChainInQuad(pdse, b); // SE gains 'ec' (BOGUSLY MODELED AS b)
+
+which will not work with the mECsGood concept. All
+calls on errorOfPocketChainInQuad will have to be
+reviewed and tightened up whatever that takes.
+
+:112]
+
+:111]
+
+:110]
+
+:109]
+
+:108]
+:107]
+
+:106]
+
+:105]
+
+:104]
+
+:103]
+
+:102]
+
+:101]
+
+:100]
+
+:99]
+
+:98]
+[113:
+
+Sun Jan 15 06:35:28 2023 Nap time but, lots of
+progress. Have an issue currently that the xfer
+cable is showing mECsGood == true and the upstream
+end, causing xfer cable cancer which is now
+blocking proper growth of the LD code loop.
+
+xfer cable should not think ECs are good.
+
+Also, the code loop growth has stalled due to lack
+of ECs after a dozen insns or so. I suspect we
+could 'fix' that by upping the cEC_ERROR penalty
+up even higher, so it'll outweight dshops error
+over a greater distance, but that is pretty hacky
+and amounts to tuning for a particular maximum
+code loop size.[114:
+
+Sun Jan 15 06:45:00 2023 We could go to a small
+Int for mECsGood instead of a Bool. Then the
+center could ratchet up and down how much ECs are
+worth in response to durable shortages and gluts.
+
+:114]
+
+:113]
+[115:
+
+Sun Jan 15 06:56:00 2023 Somehow we lost minDSHops
+on the LD code loop and it's sprawling.
+
+[116:
+
+Sun Jan 15 06:58:19 2023 Manually set minDSHops
+back on for a test, but it kind of looks like the
+damage is done.. We shall see.
+
+[117:
+
+Sun Jan 15 07:09:08 2023 Nap time. Progress.
+
+:117]
+
+:116]
+
+:115]
+[118:
+
+Sun Jan 15 11:28:08 2023 Well, with the manual
+intervention to set minDS, I believe we *would
+have* had two viable offspring except at the last
+possible moment, while cell division was in
+progress, the LD code loop popped out a U-loop
+into the path of the reduced maxhops.
+
+:118]
+[119:
+
+Sun Jan 15 16:32:39 2023 OK, left
+20230115135415.mp4 running before nap. Stuff
+definitely getting better but it had two issues:
+
+ (1) Improved xfer and resize speed meant first
+     split happened when maxhops was only 15 or
+     16? And got LDZ even though its code loop was
+     really quite trim
+
+ (2) RD MO failed to erase because the post buffer
+     loop was a triple that had no EC so it
+     couldn't roll.
+
+[120:
+
+Mon Jan 16 00:23:51 2023 Another failure like
+:113: above, in 20230115172942.mp4:
+
+ - OBSERVED FAILURE: MO->LD xfer cable goes
+   cancerous, fills in so much of LD SE quadrant
+   that LD code loop can't expand -> livelock
+
+   RELATED: The MO->LD xfer cable is mTQMapCommand
+   == 0xF and mECsGood. Again, xfer cable should
+   not think ECs are good. We think there's bug
+   about mECsGood handling in unlooped chains.
+
+   ADDITIONAL SUGGESTION: MO->LD xfer cable should
+   be restricted to NW + NE quadrants.
+
+   NOTE: This cable is under the influence of both
+   the MO and the LD DS's. Minimizing DS hops
+   means different things in different places on
+   the cable.
+
+:120]
+:119]
+[121:
+
+Mon Jan 16 00:38:51 2023 So, what are we going to
+do about
+
+     (2) RD MO failed to erase because the post buffer
+         loop was a triple that had no EC so it
+         couldn't roll.
+
+? Should we do anything? What kept the post buffer
+from (eventually) opening up, in that case?[122:
+
+Mon Jan 16 00:41:15 2023 ->The MO code loop had
+sprawled into MO SW and blocked the post buffer
+expansion.
+
+[123:
+
+Mon Jan 16 01:03:31 2023 So, we have multiple
+problems here involving TQDS settings on code
+loops and xfer cables.
+
+And we really don't have a systematic approach to
+specifying TQDS setting in the Ancestor
+code. Simply setting TQDs data members in the
+Ancestor isn't enough, ..is it? No: It's not:
+Because TQDS settings propagate from whateven
+codon is in whatever DSP at any given moment. The
+Ancestor code loop TQDS settings get overwritten
+before the loader is even finished.
+
+So, we have a small menagerie of LX instances that
+have extra TQDS data members, in addition to the
+base class. Who do we have?[124:
+
+Mon Jan 16 01:48:26 2023 Well, notably, LXMarker
+has
+
+      typedef Bits(4) ControlMap;
+      ControlMap mPUMap;            //< which pui up maps to set
+      TQDSControl mTQDSControl;
+
+which it pushes to the quadrants in perform(..) via
+
+    for (Unsigned i = cPUNIT_REG; i <= cPUNIT_XEQ; ++i) {
+      ProcUnit pu = (ProcUnit) i;
+      ProcUnitInfo & pui = dss.mPUInfos.mPUInfoAry[pu];
+      ControlMap cm = (ControlMap) (1u<<pu);
+
+      if ((mPUMap & cm) != 0u) {
+        Bool ret = pui.setTQDSControl(mTQDSControl);
+ ..
+
+However, today's Ancestor14213 never actually
+executes an LXMarker insn, so that's all kind of
+moot ATM.
+[125:
+
+Mon Jan 16 01:54:30 2023 More in the TQDS usage
+inventory:
+
+ - The loader copies its own TQDS to each insn it
+   loads.
+
+:125]
+:124]
+
+:123]
+
+:122]
+
+:121]
+[126:
+
+Mon Jan 16 02:25:12 2023 Look, the LD/MO is gripped
+
+ BR
+ GW
+
+but the RD/MO is gripped
+
+ BG
+ RW
+
+right after cell division, in a significantly
+outgeneration from the Ancestor. That's going to
+put the first SL post buffer in different places
+in those two diamonds.
+[127:
+
+Mon Jan 16 04:22:23 2023
+
+Payload at front.
+BC grow blue NTx3, WT
+deposit DS
+all ECs
+{EOP}
+record/reset/regrip
+send prev
+
+Poppers that turn into
+a wide or narrow black column
+
+Poppers that
+fill a pocket
+rect with themselves
+
+configure color before and after popping
+
+:127]
+:126]
+[128:
+
+Tue Jan 17 01:08:03 2023 Well, we added two insns
+at the head of Ancestor14214, that build an
+arm/DS/ECs to the NW.. then, at the moment, kills
+it. Goal is to have an LXPayload10 element that,
+on its first perform(..), does the following:
+
+ - reads the DS status, then standardizes it
+ - updates its germline lineage based on reading
+ - makes a copy of itself with that modification
+ - switches the copy to intention #1
+ - puts the copy on the blue xfer cable
+ - switches itself to intention #2 and blocks
+
+When perform(..) in intention #2
+ - Wait for blue to become empty, meaning the
+   payload is clear.
+ - Switch back to intention #0 and
+ - marks self for rotation
+
+Eventually, the intention#1 atom will perform(..)
+at the second, payload, DS, and it will do the
+following
+ - if it has a downstream ngb
+   = move itself to green, so now it has no downstream
+   = regrip G<->W
+ - if it has no downstream ngb
+   = if killLoop G in progress, block
+   = else delete the DS
+
+Then when int#1 act(..) is called it
+ - If inDSP, block
+ - Otherwise, switch to popper mode
+
+:128]
+[129:
+
+Tue Jan 17 09:20:12 2023 OK, so Ld, at least, is
+an example of an element that does both active
+mode instruction processing (DS/perform) and
+passive mode (behave/act) processing. Key point is
+that there's no LoaderState set up when we're in
+perform(..). So if we want to do a lot of
+state-distinguished processing in perform(..), we
+should probably just which(mStateIdx) rather than
+developing subclasses and all.
+
+:129]
+[130:
+
+Wed Jan 18 09:17:16 2023 Geez
+SW3Packet.tryDaughterDS is super fragile? Like it
+won't block if the PocketHC3 isn't cSTATUS_OK, it
+just immediately declares cSW3CMST_CANT?
+
+And we've gone this long without ever running into
+that?? [131:
+
+Wed Jan 18 09:20:10 2023 Or is it we don't get
+this far unless the pocket is OK, and the issue is
+we're taking an early exit after we assumed we
+could finish clean? That makes a ton more sense..
+[132:
+
+Wed Jan 18 09:37:45 2023 Reorganized
+tryDaughterDS; going again from small.
+
+:132]
+
+:131]
+
+:130]
+[133:
+
+Wed Jan 18 12:57:10 2023 Still have to do
+something about the diamond cutting process. Just
+saw in 20230118100145 how the seed new daughter
+cutters get significantly blocked by
+double-density forward sites. Really need a more
+robust mechanism, after all the work.
+
+ALSO REMEMBER WE WANT
+ - TQDS lockdown
+ - Strict TQ obeying even during stochastic
+
+PLUS MAYBE
+ - ECs 1% chance to flip dirs on their own
+   independent of patterns and rules
+
+[134:
+
+Wed Jan 18 16:06:53 2023 OK more failures due to
+TQ violations blocking the Q's legitimate users.
+
+Strict TQ is now at the top of the stack.
+
+TQ CODE REVIEW
+
+ - OK: Right now we have
+
+PatchState.errorOfPocketChainInQuad(PocketDir quad, PocketChain & pc) ->
+TQDSControl.chainError(PatchState & ps, PocketDir pd) ->
+    Int srerr = errorFromDSHops(ps,dshops); // size range error
+    Int tqerr = errorFromTQ(ps,tquad);      // target quadrant error
+    Int ecerr = errorFromEC(ps);            // EC error
+
+and errorOfPocketChainInQuad is called all over
+the place by overrides of
+
+  virtual Int evaluate(PatchState & ps, PatchRulePatternBinding & prpb)
+
+which in turn are called from
+
+  virtual Bool tryRule(PatchState & ps)
+
+So one obvious idea is have a special value
+meaning veto, and have every caller check that
+before continuing to evaluate
+
+  constant Int cRULE_VETOED = Int.minof;
+
+but that seems a pain.
+
+Another idea is return a Bool meaning veto and
+pass an Int& for an updating score. That's a
+little better.
+
+   Bool chainError(PatchState & ps, PocketDir pd, Int & penalties)
+   ..
+      if (errorFromDSHops(ps,dshops,penalties)) return true;
+      if (errorFromTQ(ps,dshops,penalties)) return true;
+      if (errorFromEC(ps,dshops,penalties)) return true;
+
+[135:
+
+Wed Jan 18 16:30:26 2023 Maybe let's just try
+that, rather than/before getting more exotic?[136:
+
+Wed Jan 18 16:31:50 2023 Except: A lot of the eval
+calls depend on the caller to determine the sign
+of the returned penalties. We'd have to pass a
+sign variable as well? That's pretty ugh.
+
+So that means we wouldn't be passing running
+penalties but just a this-call's-penalty. So we
+might as well return a flag value or a struct?
+
+We want a Penalty that acts like an Int except it
+has a pinning veto value.
+
+[137:
+
+Wed Jan 18 16:55:06 2023 Well let's take it in a
+different direction: What if we just use a 'rilly
+big penalty' for 'strict TQ'? Like millions? So
+the odds of making that violation are ridiculously
+low.. BUT, if such a move is negated, we'll do it
+for sure (unless clash of the titans).
+[138:
+
+Wed Jan 18 17:03:09 2023 OK that's building, with
+
+  constant Int cILLEGAL_TQ_ERROR = 10000000; // 10M. Really don't want yall to do this
+
+. We shall see. It does mean that if we, for
+example, if we change the TQMap, so that there are
+illegal chain links, those links will be willing
+to blow any OTHER penalty terms to become TQ
+compliant.
+
+Which I guess is what we're saying we want.
+
+We shall see.[139:
+
+Wed Jan 18 17:10:44 2023 Actually I guess I know
+what I expect to see:
+
+ - Still problems, because we also have issues
+   with the TQMap not being set to what we think
+   we want.
+
+ - So we expect chain will still go in 'illegal'
+   Qs, because they're not actually illegal
+   according to the delivered TQDS.[140:
+
+Wed Jan 18 17:44:08 2023 For example, the LD code
+loop - which is currently building the arm to the
+RD - has mTQMapComment = 0xF. And it has poached
+onto the NE quadrant Where It Is Definitely Not
+Supposed To Be. But it sees no reason not to.
+
+So, how does that happen? How does TQDS info move
+through an xfer cable to a destination loop?[141:
+
+Wed Jan 18 19:17:19 2023 In LXSendLoop, we do
+
+        Atom acopy = ccodon.atomof; // get a copy
+        Codon & cacopy = (Codon&) acopy;
+        bcu.copySharedData(hcodon.atomof, acopy);
+
+where ccodon is the program loop and hcodon is the
+EC on the xfer cable. So that preserves the xfer
+cable mapping - not that it matters much or long,
+because LXSendLoop is at the downstream end of the
+xfer cable.[143:
+
+Wed Jan 18 19:27:21 2023 So, who sets the xfer
+cable ECs? That's LXCtorArm stuff..[144:
+
+Wed Jan 18 19:29:32 2023 'Convert arm to ECs'
+produces an cSW3C_BECOME which ends up calling
+
+          return tryBecome(s3s,s3,(ClassUtils.ClassId) mArg);
+
+in each SW. And tryBecome does
+
+    BaseClassUtils bcu;
+    Int bits = bcu.copySharedData(s3.atomof,a);
+
+where s3 is the SwapWorm. So it copies the
+SwapWorms TQDS data. Where does the SwapWorm get
+it?[145:
+
+Wed Jan 18 19:34:11 2023 Via SW3Packet.tryGrowSeg,
+I'd think.. which goes to
+PocketChain.tryGrowOrMove.. which makes a copy of
+self and modifies it selectively:
+
+      Atom a = self.atomof;       // Copy as is
+      Self & copy = (Self&) a;
+      copy.mPocketPtrs[Segment.cBODY_DOWN] = reversePocket(pickedptr);
+      self.mPocketPtrs[Segment.cBODY_UP] = pickedptr;
+
+so the new head will have the same TQDS as the old
+head.
+
+So where does the first SW3 come from?[146:
+
+Wed Jan 18 19:40:00 2023 It comes from
+LXCtorArm.doReset(..) whic among other things
+does:
+
+      SwapWormHC3 h;
+      h.mPocketPtrs[cBODY_UP] = cPP_NULL;
+      h.mPocketPtrs[cBODY_DOWN] = cPP_NULL;
+      h.setAllTQs();               // TQDS says: Go where you're told,
+      h.setMinDSHopsCommand(true); // but stay snug (if you decay to ECs)
+
+And there's your foggen 0xF right there buster.
+
+Question is: When constructing a new arm,
+(1) What do we want instead? and
+(2) How do we specify that?
+[147:
+
+Wed Jan 18 20:54:00 2023 What if we had a
+'prefix'.. But that would take a lot of codes that
+we don't have.. We could have a two-part insn with
+the arg taking the whole next PC slot.
+
+[148:
+
+Wed Jan 18 21:25:37 2023 So: Places to control TQDS:
+
+(1) When we init a construction arm
+    BOpCode cBOC_LINI = 9u; //< local init with BOpCode arg
+(2) When we init a receiving looper
+    TQDSConfig LXRecvLoop.mTQDSConfig;
+[151:
+
+Thu Jan 19 13:05:10 2023 Well, for now saying:
+
+(1) LXCtorArm sets single quadrant:
+      SwapWormHC3 h;
+      h.mPocketPtrs[cBODY_UP] = cPP_NULL;
+      h.mPocketPtrs[cBODY_DOWN] = cPP_NULL;
+      h.setSingleTQ(pui.mInQuadrant); // TQDS default: You're good in only starting quadrant
+(2) LXRecvLoop sets single quadrant:
+      looper.init(); // init over shared data
+      looper.setSingleTQ(puiout.mInQuadrant); // TQDS defaults
+
+which seems good for (2) but potentially bad for
+(1), because upon arrival at a new DS, that says
+the SW3 is bad where it is but good further
+on. I'd expect it would also cause stuff to
+accumulate at the frontier just before HC3
+'changes dshops allegiance' from the source DS to
+the destination DS.
+
+[152:
+
+Thu Jan 19 19:53:59 2023 OK trying to get
+mLockedDown working. First attempt failed because
+I was asking a QHardCell if it implemented
+TQDSControl.. Which it uh doesn't.
+
+Now using the mPCount/mPSN fields of the
+PatchState struct instead.
+
+:152]
+:151]
+:148]
+
+:147]
+:146]
+
+:145]
+
+
+
+:144]
+
+:143]
+[142:
+
+Wed Jan 18 19:20:56 2023 So I see in
+TQDSControl.stabilizeCommandAnchor, we have
+
+    SN upsn = pcs.mEWSNMate[cBODY_UP];
+    SN dnsn = pcs.mEWSNMate[cBODY_DOWN];
+    EventWindow ew;
+    if (!ew.isAccessible(upsn) ||
+        !ew.isAccessible(dnsn))
+      return false; // NO
+
+which is going to bail at both ends of an xfer
+cable, since either BODY_UP or BODY_DOWN won't
+exist.
+
+Which means mECsGood will never be changed. But
+we're sort of thinking an open cable should never
+have mECsGood, so it ought to be like:
+
+ ..
+    if (!ew.isAccessible(upsn) ||
+        !ew.isAccessible(dnsn)) {
+      setECsGood(false);  // Never like ECs in open cables
+      return false;
+    }
+ ..
+
+and just that should help a bit, I think.
+
+:142]
+
+:141]
+
+:140]
+
+:139]
+
+:138]
+:137]
+
+:136]
+
+:135]
+
+:134]
+:133]
+[149:
+
+Thu Jan 19 00:28:57 2023 We need to have multiple
+RootHardCell timers. We need to bring back the
+motion watchdog and have it in addition to
+mProductivity, at a (much) slower rate. As soon as
+we start avoiding zombism, we start getting more
+or less legitimate lockups among code-bearing
+diamonds. We need to shake things up eventually.
+
+:149]
+[150:
+
+Thu Jan 19 06:28:06 2023 So what if the Ancestor
+was written to just release the payload, but then
+wait until mMaxHops 16u or whatever, before even
+beginning to run the repro loops. Might be better
+to just wait before cutting that way we
+theoretically are doing or would do here.
+
+:150]
+[153:
+
+Thu Jan 19 23:16:11 2023 Need to have a phase in
+membrane stuff where the thing gets more fragile
+when it doesn't have ngbs pointing the same
+way. Just had a buried MSensor pointing 180 wrong
+that was - as far as I could tell - immortal til I
+axed it by hand.
+
+:153]
+[154:
+
+Fri Jan 20 06:55:02 2023 If I was to try to
+control folding explicitly, instead of randomizing
+it, what might be some nifty folding patterns?
+
+
+      *   a            dist 2 capacity 6
+
+      c   b
+
+
+      *   a   b        dist 3 capacity 14
+
+      g   d   c
+
+      f   e
+
+
+      *   a   b   c    dist 4 capacity 22
+
+      k   f   e   d
+
+      j   g
+
+      i   h
+
+
+
+      *   a   b   c   d   dist 5 capacity 34
+
+      q   j   i   f   e
+
+      p   k   h   g
+
+      o   l
+
+      n   m
+
+
+      *   a   d   e   f   g      dist 6 capacity 46
+
+      w   b   c   j   i   h
+
+      v   u   l   k
+
+      s   t   m
+
+      r   o   n
+
+      q   p
+
+
+
+      *   a   b   c   d   e   f   dist 7 capacity 58?
+
+      C   B   m   l   k   h   g
+
+      z   A   n   o   j   i
+
+      y   x   q   p
+
+      v   w   r
+
+      u   t   s
+
+:154]
+[155:
+
+Fri Jan 20 07:29:04 2023 Damnit the LD code loop
+on the current run just blew up at >50KAEPS and I
+wasn't event tracing because I was making a movie
+instead. It had been spending a long time in
+LXRemapLoop cINS_RESHAPE_CODE, trying to slim down
+to maxdshops 7, while I was screwing around with
+non-random chain quadrant fills..
+
+And it looks like it got to 7 because it released
+its XD diamond cutter, and because we see:
+
+    20230120072401-3363: 51531AEPS [87D1B987]MSG: print: "vvv DYING vvv"
+    20230120072401-3364: 51531AEPS [87D1B987]MSG: print: "PocketChain:>MATE_UNSURE"
+    20230120072401-3365: 51531AEPS [87D1B987]MSG: @(75,77) of [0,0]: (WT) (LXWait(mTest=3,mOperand=0,mTQDSConfig=(TQDSControl(mTQMapCommand=0xF,mTQMapValue=0x0,mECsGood=false,mLockedDown=false,mMaxDSHopsValue=0),)QLabelMark(mLabel=0xFF,)PocketChain(mDSType=1,mArrived=false,)QDebugUtils(mDBG=false,)Segment(mPocketPtrs=[0]=2,[1]=3,)TQDSControl(mTQMapCommand=0x6,mTQMapValue=0x6,mECsGood=false,mLockedDown=true,mMaxDSHopsValue=6)
+    20230120072401-3366: 51531AEPS [87D1B987]MSG: print: "^^^ PocketChain.die ^^^"
+
+and hmm maybe that is actually a lead rather than
+just collateral damage? We're expecting the
+problem is that the XD is (newly) permitted to
+raise a pocket occupancy to 3 as it passes
+through.. and we expect some code wasn't ready to
+just block about that and raised a fuss instead.
+
+And so maybe it was indeed this code:
+
+        Segment.MateStatus ms = qc.findMates(self);
+        print("QchObs12");
+        print(ms);
+        if (ms > cMATE_UNSURE) {
+          return qc.die("PocketChain:>MATE_UNSURE");
+        }
+
+[156:
+
+Fri Jan 20 07:38:30 2023 And findMates(..) winds
+down to SegmentState.findMate(..) which among
+other things does this:
+
+        RectIterator ri;
+        if (!mPocket.initIterator(ri, ngb, true))
+  ..
+        Unsigned matches = 0u;
+  ..    while (ri.hasNext() && matches < 2u) {
+  ..    }
+  ..
+        if (matches > 1u) return Segment.cMATE_WRONG; // Multi pointing at us?
+
+with
+
+      constant MateStatus cMATE_WRONG   = 4u; //< At least one mate is inconsistent with us
+
+which is one thing that could trigger the error
+seen. Now, the matching goes like:
+
+  ..      Atom & a = ew[n];
+          if (a as Segment) {
+  ..        if (seg.inMyGroup(a)) {
+  ..          PocketPtr themp = a.mPocketPtrs[1u-bd];
+              Bool bothHere = themp == 0u && ngb == 0u;
+              Bool opposites = themp == 5u-ngb;
+              if (opposites || bothHere) { // are they pointing back at us?
+  ..            if (random.oneIn(++matches))
+                  matesn = ew.getSiteNumber(n);     // good candidate
+  ..
+
+So, questions:
+
+ - is XD a Segment?[157:
+
+Fri Jan 20 07:52:25 2023 Kinda seems like it's
+not? DiamondCutter itself is a quark:
+
+  /*__________________________________________________
+  | COMPONENTS of DiamondCutter <137> (23 bits/41 unused):
+  |
+  | Pos	| Bits	| Name	| Type <classid>
+  | 0	| 3	| mDCWatchdog	| RXTimer(3,6u,100u) <143>
+  | 3	| 3	| mStateIdx	| Unary(3)
+  | 6	| 2	| mOriginalAxialDir	| Unsigned(2)
+  | 8	| 5	| mNewMaxGoalHops	| Unsigned(5)
+  | 13	| 9	| mEventCounter	| Unsigned(9)
+  | 22	| 0	| super	| D1Pocketable <115>
+  | 22	| 0	| base	| DTU <46>
+  | 22	| 0	| base	| UrSelf <0>
+  | 22	| 0	| base	| Intender <110>
+  | 22	| 1	| base	| QDebugUtils <60>
+  |___________________________________________________
+
+and elemen XCutDiamond (XD) is
+
+  /*__________________________________________________
+  | COMPONENTS of XCutDiamond <144> (27 bits/44 unused):
+  |
+  | Pos	| Bits	| Name	| Type <classid>
+  | 0	| 22	| super	| DiamondCutter <137>
+  | 22	| 4	| base	| XTimer(4,14u,1u) <82>
+  | 26	| 0	| base	| UrSelf <0>
+  | 26	| 0	| base	| DTU <46>
+  | 26	| 0	| base	| D1Pocketable <115>
+  | 26	| 0	| base	| Intender <110>
+  | 26	| 1	| base	| QDebugUtils <60>
+  |___________________________________________________
+
+[158:
+
+Fri Jan 20 07:54:27 2023 So that seems to say that
+'a as Segment' wouldn't happen, so ++matches
+wouldn't happen, so we're up the wrong tree.
+
+[159:
+
+Fri Jan 20 07:56:38 2023 findMate(..) also does
+this:
+
+        if (matches == 0u)
+          return (inaccess > 0u) ? Segment.cMATE_UNSURE : Segment.cMATE_MISSING;
+
+but it's hard to see how matches would be zero
+with inaccess == 0 just because of a third atom in
+a pocket?
+
+[160:
+
+Fri Jan 20 07:58:44 2023 Grrr. Really need some
+kind of observability here.
+
+Possibly this is somehow additional fallout from
+the relatively recent change to init mEWSNMate[]
+to SN.maxof.[161:
+
+Fri Jan 20 08:02:30 2023 AH AH AH AH I SEE IT. I
+quoted it in :156: above and then drove right by
+it:
+
+  ..    while (ri.hasNext() && matches < 2u) {
+
+The iteration quits as soon as matches >= 2! So
+the XD in the pocket could drive up the match
+count so the actual mate doesn't get
+considered.. but I thought we concluded XD was not
+a Segment and therefore couldn't be a match??
+
+..It really seems like XD is not a Segment.
+
+Fudge.
+[162:
+
+Fri Jan 20 08:09:19 2023 There's another possible
+issue that lots of people call findMates, because
+historically it wasn't done automatically.
+
+Now it is done automatically, in
+PocketChain.observe(..), but there's still a bunch
+of other calls on it, and it has no memoization
+check so it just runs again. [163:
+
+Fri Jan 20 08:13:58 2023 I think we should
+idempotentize findMates right now just on
+generally sanity grounds. There's no reason to
+expect it would make any sense to have it actually
+compute twice in an event, as if it could handle
+self-induced ew changes correctly. So let's stash
+the MateStatus and let people call it all day if
+they want to.[164:
+
+Fri Jan 20 08:50:16 2023 OK well did that. Is that
+what's now runnning? Not sure.[165:
+
+Fri Jan 20 08:50:50 2023 Looks like no: Current
+run started at 8:06, before :163:.
+[166:
+
+Fri Jan 20 08:53:46 2023 But hmm: RD is on to its
+final insn (cINS_WAIT_CUT) but I don't see any XD
+anywhere? That seems messed up.
+
+:166]
+:165]
+
+:164]
+
+:163]
+
+:162]
+:161]
+
+:160]
+
+:159]
+
+:158]
+
+:157]
+
+:156]
+
+:155]
+[167:
+
+Fri Jan 20 09:48:11 2023 OK I see one thing that's
+been slowing down DS execution a lot:
+
+In QHardCell.act(..), the call on checkMoving(..)
+often returns true, because downstream isn't
+settled enough to move. But that true return then
+blocks DS execution, because it does:
+
+      Bool act(Intender & in) {
+        print("DSSACT10");
+        if (super.act(in)) return true;
+        print("DSSACT11");
+        DiamondSequencer & ds = (DiamondSequencer&) in;
+ ..
+
+'in the conventional fashion'.
+
+So I'm wondering about having DS try to execute
+before calling super.act(..)? Is that a super
+(haha) terrible idea?
+
+QHardCell act does
+ - updatePatch, and
+ - checkMoving
+
+plus calling its super, which is just Intention,
+and Intention.act(..) does nothing.
+
+Let's try it. I'm sick of watching DS do nothing
+while the root jiggles around.
+
+:167]
+[168:
+
+Sat Jan 21 00:02:58 2023 Ooh, if we moved the
+first two ancestor insns to the end, the ancestor
+itself wouldn't have a bar code and the first
+codes we'd see (assuming two kids) would be
+distinct..
+
+:168]
+[169:
+
+Wed Jan 25 09:51:47 2023 So we've been running on
+the T2s for several days now and I have wants.
+
+ - Some kind of DX robustness punchup
+
+ - CodeBar to have a more distinct border
+
+     (start)               (end)
+
+     XX..XX ..XX.. XX..XX ....XX
+     ..XXXX               ..XXXX
+     XX..XX               ....XX
+     ..XXXX               ..XXXX
+     XX..XX               ....XX
+     ..XXXX               ..XXXX
+     XX..XX               ....XX
+     ..XXXX               ..XXXX
+     XX..XX ..XX.. XX..XX ....XX
+
+Maybe: "halftone" start and end bars, plus
+code-inverted top/bottom rows?
+
+Let's try it? Or "halftone" top/bottom the whole
+way?
+
+     XX..XX ..XX.. XX..XX ....XX
+
+halftone whole way:
+
+ CodeBar.isBlack(C2D posInBar, Bool oddBar)
+[170:
+
+Wed Jan 25 10:13:08 2023 Maybe CodeBar doesn't do
+borders. Maybe Popper (or eventually CodeBarPopper
+if we lift out QPopper) does the borders.
+
+So we'd have all of this to work with
+
+  BarHeight mBarHeight; //< How tall my column is
+  BarHeight mBarY;      //< My y index (in pockets) in the column
+  typedef Unary(2) BarCoord;
+  BarCoord mMyX = 1u;  //< My x pos (in sites) in the bar
+  BarCoord mMyY = 1u;  //< My y pos (in sites) in my prepop pocke
+
+Popper.isBlack()
+  if codebar type is start
+    if mMyX == 2 return black
+    if even (mMyX + mMyY + 3 * mBarY) return black
+    return white
+  if codebar type is stop
+    if mMyX == 0 return white
+    if odd (mMyX + mMyY + 3 * mBarY) return white
+    return black
+  row = mBarY*3 + mMyY
+  col = // uh oh we don't know pos in mLineage?
+  if mBarY*3 == 0 || mBarY == mBarHeight
+
+[171:
+
+Wed Jan 25 10:37:22 2023 Hmm but of course the
+hack tries to spread: The Popper level doesn't
+immediately know the overall bar width. Only
+LXPayload10 knows that, and even that isn't
+immediate since it would have to scan its mLineage
+to find the leftmost stop code.
+
+Now we could, I suppose, try to suppress
+Popper/pocket level indexing completely, in favor
+of full site-level indexing - Plate style, I
+guess. We'd still use Poppers to flood the pocket
+level with everything needed to fill the Plate
+when it pops, but then "they'd" have absolute
+Plate coords, rather than pocket-relative coords,
+once they popped?
+[172:
+
+Wed Jan 25 10:56:51 2023 And then, I guess, we
+could have CodeBar digits that didn't even all
+have to be three cols wide.
+
+[173:
+
+Wed Jan 25 11:09:39 2023 But I'm really losing
+psyche for this whole redo, given how low-priority
+the CodeBar/Popper hack was to begin with.. Maybe
+just hack something for start/stop CodeBar
+rendering? What would be super cheap? 2*Halftone +
+black to start, white + 2*halftone to stop?
+[174:
+
+Wed Jan 25 11:44:13 2023 OK so halftoning
+start/stop is looking pretty distinguishable and I
+think overall helpful. Maybe time to call that one.
+
+:174]
+
+:173]
+
+:172]
+
+:171]
+:170]
+
+:169]
+[175:
+
+Wed Jan 25 12:17:06 2023 OK, let's have some DX
+robustness punchup prose and kahns.
+
+-> DX chain from Ds to MO
+   + supported by DS+RG, wouldn't have to time out
+   - couldn't be a 3rd atom like current DX
+
+-> Cut suppression: MO just cuts unless suppressed
+   with some regularity by the Ds.
+   + ?
+   - Need durable MO controller?
+
+-> Two 'cut ready' bits for L and R?
+   + Flood robustness? Self stabilizing?
+   - Costs two bits in HG
+   - Or three, with a return?
+[177:
+
+Thu Jan 26 11:05:14 2023
+
+-> RingO between MO root and daughters?
+
+:177]
+[176:
+
+Wed Jan 25 12:43:05 2023 (HardCellG has 30 bits
+avail.. RootHardCellG has 15..)
+
+:176]
+
+:175]
+[178:
+
+Thu Jan 26 13:17:14 2023 In random news, I think
+I'm onto the issue that causes diamond grid to
+exceed the mother's footprint during cell
+division: QHardCell will update based on
+hc3.minUpHops without also picking up the
+corresponding QHardCellG.mMaxHops. So it can end
+up thinking it's closer to the root of a bigger
+diamond than it can possibly be.
+
+So how do we fix that, given that subclass
+relationship? Really want to call down somehow for
+this? Hmm especially because HC3State doesn't
+capture maxHopsGoal from the environment at all,
+it just ..[179:
+
+Thu Jan 26 13:35:09 2023 OK yes there already is
+QHardCell.getMaxHopsGoal().. [180:
+
+Thu Jan 26 13:36:10 2023 And hmm, at
+HC3State.ulam:155, it looks like we are
+picking up the registered value:
+
+          if (takeinfo) {
+            minUpHops = n.getUpHops();
+            minUpHopsC2D = n.getNgbC2D();
+            minUpHopsAD = (AxialDir) i;
+            minUpHopsGoal = n.getNgbMaxGoalHops(); //
+          }
+
+so.. do we just need like
+
+      qc.setMaxHopsGoal(hc3.minUpHopsGoal);
+
+in QHardCell?
+[181:
+
+Fri Jan 27 00:29:59 2023 That, like, seems to be
+just exactly all we needed.. Now see zero evidence
+of HG 'coloring outside the lines' during cell
+division. I get the feeling it might marginally
+help reduce miscarriages as well: I suspect flawed
+transitional grid geometries might have enabled
+(before lockdown) last-minute chain movements into
+space that wasn't really available.
+
+:181]
+:180]
+
+:179]
+
+:178]
+[182:
+
+Fri Jan 27 13:13:06 2023 How could we call a
+subroutine, or significant subprocess, in LX?
+
+ - What does LX stand for anyway? Linear
+   Executable? Linked Executable?
+
+What if I wanted to copy either a specific segment
+or the whole loop to a variety of places? So we
+could set up some non-germline diamonds for our
+multicellular future.
+
+[183:
+
+Fri Jan 27 13:32:33 2023 And yet we'll want these
+non-germline cells to be able to proliferate and
+differentiate as well, so it's not like such cells
+won't do further splitting. But if they carry much
+less code, they could split at smaller sizes..
+
+Really do want growth and split size controls, so
+it'd be easy to specify such cells..
+
+[184:
+
+Fri Jan 27 13:38:59 2023 Now I'm wondering again
+about moving a loop rather than doing the MO->LD
+copy.
+
+What if it was a non-DS function? A single
+LoopMover atom that would:
+
+(1) Be configured for desired loop offset
+(2) On perform, kills the DS and begins dragging
+    the loop toward the selected offset
+(3) Be helped by special PatchRules that recognize
+    that atom and its current offset
+(4) Act DUMB for purposes of loop semantics..
+(5) Deploy a new DS upon arriving at the
+    destination
+
+[185:
+
+Fri Jan 27 13:47:20 2023 Or something like that? I
+feel like:
+
+ - With no DS, there's no DSHops, which will break
+   a lot of loop semantics
+
+ - What if it's a custom DS rather custom LX? Or
+   even a regular DS, specially handled?
+
+What if a LoopMover does like this:
+
+   /------------------------------------------\
+   |                                          ^
+   v                                          |
+  start           kill DS   move          recreate DS
+
+ ..    ..                                 ..    ..
+   B  R                                     B  R
+    DS                                       DS
+   G  W                                     G  W
+ ..    LM --A1    LM --A1   LM--EC  --A1  ..    LM--EC  --A1
+       |          |         |                   |
+      A2         A2         EC--A2              EC--A2
+
+
+with the point being that the DS is redeployed on
+each step of the travel, so the rest of the loop
+gets a chance to feel the new dshops.
+
+Seems weird. Why not just zoom the LM to its goal,
+trailing EC chains as needed, then redeploy a DS
+and let the loop relax?
+
+I really wish there was a 'more parallel' story
+for moving the loop, though. Like a subclass of EC
+- could we even think of such a thing? - that
+could be deployed throughout a loop, to track and
+encourage moves toward a desired offset.
+
+Sort of curious to just try the 'zoom drag LM' and
+see how bad it is, though..
+[186:
+
+Fri Jan 27 14:09:17 2023 What if it didn't deploy
+EC chains but special LM chains that diffuse on
+the loop and encourage directed travel? And then
+decay into ECs somehow when they're supposed to..
+
+:186]
+:185]
+
+:184]
+
+:183]
+
+:182]
+[187:
+
+Sun Jan 29 00:51:00 2023 OK, so LXUArm appears to
+be working and has already cut one insn from the
+Ancestor, using it for the LD->RD ctor.. Let's
+review the rest of the code.
+
+:187]
+[188:
+
+Sun Jan 29 12:08:11 2023 From last night:
+
+----
+PROMPT: MULTICELLULARITY
+
+nano-ops do it:
+Unsigned(2)
+ grow straight 
+ grow left
+ grow right
+ deposit/decay/end
+
+If we could have two bits for an internal heading,
+it could be:
+
+typedef Unsigned(2) NanoOp;
+ rotate CW
+ rotate ACW
+ grow in dir
+ deposit in dir/decay/end
+
+it's about learning how to build it
+theory suggests outlines
+but practice builds machines
+
+somatic cells
+that stay small
+and cluster around mom
+----
+
+:188]
+[189:
+
+Sun Jan 29 20:25:55 2023
+
+NanoOps
+  cNOPS_FWD = 0u; //< go forward
+  cNOPS_LFT = 1u; //< go left
+  cNOPS_RGT = 2u; //< go right
+  cNOPS_PFX = 3u; //< prefix next op
+
+  cNOPP_DSC = 0u; //< deposit ds clockwise, make ECs and exit
+  cNOPP_DSA = 1u; //< deposit ds anticlockwise, make ECs and exit
+  cNOPP_ECS = 2u; //< just make ECs and exit
+  cNOPP_EXT = 3u; //< just exit
+  
+:189]
+[190:
+
+Mon Jan 30 23:55:42 2023 I think it's time to go
+to Ancestor15. I'm about to tear up QCtorArm to
+support controlling multiple arms simultaneously,
+plus the LXNArm nano arm with 2 bit NOpCodes, and
+so on, and it's all going to tear up a bunch of
+stuff.
+
+[191:
+
+Tue Jan 31 00:02:10 2023 Yeah, come on Ancestor15
+
+:191]
+
+:190]

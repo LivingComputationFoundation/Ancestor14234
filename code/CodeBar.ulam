@@ -1,0 +1,180 @@
+quark CodeBar + DTU + Fail {
+
+  typedef Unsigned(2) BarCode;
+  constant BarCode cBC_START = 0u; //< Start of code (also Ancestor)
+  constant BarCode cBC_LEFT =  1u; //< I was Left Daughter in this generation 
+  constant BarCode cBC_RIGHT = 2u; //< I was Right Daughter in this generation 
+  constant BarCode cBC_STOP =  3u; //< End of code (also next generation)
+
+  BarCode mBarCode;
+
+  typedef Bits(3) BlackMask;
+  constant BlackMask cBlackCols[] = {
+    0x5,                        //< cBC_START: 101
+    0x1,                        //< cBC_LEFT:  001
+    0x3,                        //< cBC_RIGHT: 011
+    0x2,                        //< cBC_STOP:  010
+  };
+
+  Void setBarCode(BarCode bc) {
+    mBarCode = bc;
+  }
+
+
+  Bool isHalfToneBlack(Unsigned column, Bool oddrow) {
+    return ((column%2u) != 0u) != oddrow;
+  }
+
+  Bool isBlack(Unsigned column, Bool oddrow) {
+    which (mBarCode) {
+      case cBC_START: {
+        if (column < 2u) return isHalfToneBlack(column, oddrow);
+        return true;
+      }
+      case cBC_STOP: {
+        if (column > 0u) return isHalfToneBlack(column, oddrow);
+        return false;
+      }
+    }
+    return ((cBlackCols[mBarCode]>>(2u-column)) & 1) != 0u;
+  }
+}
+
+/** BarCode Popper
+    \symbol PP
+    \color #991
+ */
+element Popper + DTU + Fail + QDebugUtils {
+  CodeBar mCodeBar; //< What value I pop to
+  typedef Unsigned(4) BarHeight;
+  BarHeight mBarHeight; //< How tall my column is
+  BarHeight mBarY;      //< My y index (in pockets) in the column
+  typedef Unary(2) BarCoord;
+  BarCoord mMyX = 1u;  //< My x pos (in sites) in the bar
+  BarCoord mMyY = 1u;  //< My y pos (in sites) in my prepop pocket
+  Bool mImPopped;       //< True once I've popped
+
+  Bool mRipCord;
+  typedef Unsigned(10) DisplayCounter;
+  DisplayCounter mDisplayCounter;
+
+  @Override 
+  Void renderGraphics() {
+    Drawable drawable;
+    if (!drawable.canDraw()) return;
+    super.renderGraphics();
+    if (!mImPopped) return;
+    ARGB color = getColor(2u);
+    constant Int cSIZE = 1024; // FILL DAT SITE
+    C2D siz(cSIZE, cSIZE);
+    C2D pos(-cSIZE/2,-cSIZE/2);
+    drawable.fillRectangle(pos, siz, color);
+  }
+
+  @Override 
+  ARGB getColor(Unsigned selector) {
+    if (!mImPopped) return super.getColor(selector);
+    ColorUtils cu;
+    if (mCodeBar.isBlack(mMyX, ((2-mMyY)+3*mBarY)%2 != 0))
+      return cu.color(0xff194c19); // 10% RB 30% G
+    return cu.color(0xffb2e5b2);   // 70% RB 90% G
+  }
+
+  Void propagateDeath() {
+    EventWindow ew;
+    for (SN sn = 1u; sn < 41u; ++sn) {
+      if (!ew.isAccessible(sn)) continue;
+      Atom & a = ew[sn];
+      if (a as Self)
+        a.mRipCord = true;
+    }
+    ew[0] = Empty.instanceof;
+  }
+
+  Void trySpread(PocketHC3 & p, SN side) {
+    EventWindow ew;
+    Random random;
+
+    RectIterator ri;
+    if (!p.initIterator(ri, side, true)) return;
+    Unsigned inaccesscount, selfcount, emptycount;
+    C2D selfc, emptyc;
+    while (ri.hasNext()) {
+      C2D c = ri.next();
+      if (!ew.isAccessible(c)) {
+        ++inaccesscount;
+        continue;
+      }
+      Atom & a = ew[c];
+      if (a is Self) {
+        if (random.oneIn(++selfcount))
+          selfc = c;
+        continue;
+      }
+      if (a is Empty) {
+        if (random.oneIn(++emptycount))
+          emptyc = c;
+        continue;
+      } 
+    }
+
+    if (inaccesscount == 0u &&  // can see all
+        selfcount == 0u &&      // and I'm not there
+        emptycount > 0u) {      // but I could be
+      Self copy = self;
+      copy.mBarY += (BarHeight) (side == 2u ? 1 : -1);
+      ew[emptyc] = copy.atomof;
+    }
+  }
+
+  Void pop() {
+    mImPopped = true;
+    EventWindow ew;
+    C2D myc(mMyX,mMyY);
+    // Fill same box regardless of where I am within it.
+    for (SN sn = 0u; sn < 41u; ++sn) { 
+      C2D csn = ew.getCoord(sn);
+      C2D nuc = myc+csn;
+      if (nuc.x < 0 || nuc.y < 0 ||
+          nuc.x > 2 || nuc.y > 2)
+        continue;
+      Self copy = self;
+      copy.mMyX = (BarCoord) nuc.x;
+      copy.mMyY = (BarCoord) nuc.y;
+      ew[sn] = copy.atomof;     // nuke the whales!
+    }
+  }
+
+  Void unpoppedBehavior() {
+    mD&&pR("CDUNP10");
+    PocketHC3 p;
+    PocketHC3.Status pstat = p.init(self);
+    if (pstat == PocketHC3.cSTATUS_BENT) return;           // wait for clarity
+    if (pstat == PocketHC3.cSTATUS_EDGE) return;           // wait for clarity
+    mD&&pR("CDUNP11");
+    if (pstat == PocketHC3.cSTATUS_OPEN &&
+        p.mCoordCount > 2u) return;             // Seeing only 3 corners is normal
+    mD&&pR(pstat);
+    mD&&pR(p.mCoordCount);
+    if (pstat != PocketHC3.cSTATUS_OK) return pop(); // do it do it do it
+    /// Always index relative to same corner
+    C2D idxc = p.mCoords[0];
+    if (idxc.length() == 0u) return; // Don't spread if we can't see it
+    mMyX = (BarCoord) -idxc.x;
+    mMyY = (BarCoord) -idxc.y;
+    
+    if (mBarY > 0u) trySpread(p, 3u); // S
+    if (mBarY < mBarHeight-1u) trySpread(p, 2u); // N
+  }
+
+  Void poppedBehavior() {
+    if (++mDisplayCounter == mDisplayCounter.maxof)
+      mRipCord = true;
+  }
+
+  Void behave() {
+    if (mRipCord) return propagateDeath();
+    if (mImPopped) return poppedBehavior();
+    return unpoppedBehavior();
+  }
+}

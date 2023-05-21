@@ -1,0 +1,247 @@
+use CodeBar;
+
+/** A task-specific Ancestor tracker.
+ */
+transient LXPayload10State : CodonState {
+
+  typedef LXPayload10 It; //< The type we are state for
+
+  //// Intention API
+
+  @Override
+  virtual Bool act(Intender & in) {
+    mD&&pR("PAY10S10");
+    if (super.act(in)) return true;
+
+    mD&&pR("PAY10S11");
+    It & it = (It&) in;
+
+    //// Then when int#3 act(..) is called it
+    //// - If inDSP, block
+    //// - Otherwise, activate popper mode
+    if (it.mStateIdx == It.cP10_POPPER_MODE) {
+      DebugUtils du;
+      du.print("INT#3ACT");
+      Bool iAmInDSP = isInDSP(cMCP_HERE);
+      if (iAmInDSP) return false;
+      return deployPoppers(it);
+    }
+    return false;
+  }
+
+  Bool deployPoppers(It & it) {
+    EventWindow ew;
+    It.BarCode bc = CodeBar.cBC_STOP;
+    if (it.mNextBarCode < It.cBARCODE_WIDTH)
+      bc = it.mLineage[it.mNextBarCode];
+    if (bc != CodeBar.cBC_STOP) {
+      PocketHC3 p;
+      PocketHC3.Status pstat = p.init(self);
+      if (pstat != PocketHC3.cSTATUS_OK) return false; // wait for clarity
+
+      RectIterator ri;
+      if (!p.initIterator(ri, 4u, true)) return false; // search W quadrant or block
+      Unsigned inaccesscount, selfcount, emptycount;
+      C2D selfc, emptyc;
+      while (ri.hasNext()) {
+        C2D c = ri.next();
+        if (!ew.isAccessible(c)) {
+          ++inaccesscount;
+          continue;
+        }
+        Atom & a = ew[c];
+        if (a is Self) {
+          if (random.oneIn(++selfcount))
+            selfc = c;
+          continue;
+        }
+        if (a is Empty) {
+          if (random.oneIn(++emptycount))
+            emptyc = c;
+          continue;
+        }
+      }
+      if (emptyc.length() > 0u) {
+        It copy = it;
+        copy.mNextBarCode++;
+        ew[emptyc] = copy.atomof;
+      } else return false; // no room at the pop-inn
+    }
+    Popper popper;
+    popper.mCodeBar.setBarCode(bc);
+    popper.mBarHeight = 3u;
+    popper.mMyY = 0u;
+    ew[0] = popper.atomof;
+    return true;
+  }
+}
+
+
+/** \symbol P0
+    \color #4e2
+ */
+element LXPayload10 : LX {
+
+  typedef Unsigned(2) StateIdx;
+  constant StateIdx cP10_CAPTURE_AND_RESET = 0u;
+  constant StateIdx cP10_DEPLOY_PAYLOAD = 1u;
+  constant StateIdx cP10_BLOCK_FOR_DEPLOY = 2u;
+  constant StateIdx cP10_POPPER_MODE = 3u;
+
+  StateIdx mStateIdx = cP10_CAPTURE_AND_RESET;
+
+  //// Intender API 
+  @Override
+  virtual ClassId getIntentionClass() {
+    return LXPayload10State.classidof;
+  }
+  
+  constant Unsigned cBARCODE_WIDTH = 10;
+  typedef CodeBar.BarCode BarCode;
+  typedef BarCode Lineage[cBARCODE_WIDTH];
+  Lineage mLineage = { CodeBar.cBC_START, CodeBar.cBC_STOP };
+
+  typedef Unsigned(4) BarCodeIdx;
+  BarCodeIdx mNextBarCode = 0u; // For use in popper mode
+  
+  //// LX API
+  @Override
+  virtual Bool perform(DiamondSequencerState & dss) {
+    mD&&pR("PAY10X10");
+    which (mStateIdx) {
+      case cP10_CAPTURE_AND_RESET: { return performCaptureAndReset(dss); }
+      case cP10_DEPLOY_PAYLOAD: { return performDeployPayload(dss); }
+      case cP10_BLOCK_FOR_DEPLOY: { return performBlockForDeploy(dss); }
+    }
+    /*case cP10_POPPER_MODE: */ fail(__FILE__,__LINE__);
+    return false; // NOT REACHED
+  }
+
+  Bool performCaptureAndReset(DiamondSequencerState & dss) {
+    mD&&pR("PAY10PCAR10");
+    ////  - reads the DS status, then standardizes it
+    DiamondSequencer & ds = dss.getDS();
+    PocketDir greendir;
+    Bool found = ds.getQuadrantOfPU(cPUNIT_INP, greendir);
+    if (!found)                 // We are not ready for no green.
+      return false;             // DEADLOCK IT DOWN
+
+    mD&&pR("PAY10PCAR11");
+    
+    Bool isld = greendir == cQUAD_SW; // we take SW green to mean 'Left Daughter'
+
+    if (isld) 
+      dss.swapPUs(cPUNIT_INP,cPUNIT_OUT); // swap SW and (hopefully) NE
+
+    //// - updates its germline lineage based on reading
+    for (Unsigned i = cBARCODE_WIDTH - 2u; i > 0u; --i) { // roll down [1]..[W-2]
+      mLineage[i] = mLineage[i-1u];
+    }
+    mLineage[1] = isld ? CodeBar.cBC_LEFT : CodeBar.cBC_RIGHT; // update newest gen
+
+    mD&&pR("PAY10PCAR12");
+
+    //// Set up to deploy
+    ProcUnitInfo & puiblue = dss.getPUInfo(cPUNIT_REG);
+    if (!puiblue.mFound || !puiblue.mIsEmptyCodon) {
+      // Something's gone wrong. Abort deploy and move on.
+      markCurrentInstructionForRotation(dss, 0u);
+      return true;
+    }
+
+    mD&&pR("PAY10PCAR13");
+    //// - makes a copy of itself with that modification
+    Self copy = self;
+
+    //// - switches the copy to intention #1
+    copy.mStateIdx = cP10_DEPLOY_PAYLOAD;
+    
+    //// - puts the copy on the blue xfer cable
+    EventWindow ew;
+    EmptyCodon & ec = (EmptyCodon&) ew[puiblue.mCodonSN];
+    copy.copyTQDSControlFrom(ec);
+    copy.swapPocketPtrs(ec);
+    ew[puiblue.mCodonSN] = copy.atomof;
+
+    markDSPForRotation(dss, 0u, cPUNIT_REG, cDSTATUS_TEMP);  // tell blue to kick it out
+
+    //// - switches itself to intention #2 and blocks
+    mStateIdx = cP10_BLOCK_FOR_DEPLOY;
+    return true;
+  }
+
+  Bool performBlockForDeploy(DiamondSequencerState & dss) {
+    //// - Wait for blue to become empty, meaning the
+    ////   payload is clear.
+    ProcUnitInfo & puiblue = dss.getPUInfo(cPUNIT_REG);
+    if (!puiblue.mFound)
+      return false;
+    if (puiblue.mOccupiedSites > 0u)
+      return false;
+    //// - Switch back to intention #0 and
+    mStateIdx = cP10_CAPTURE_AND_RESET; 
+    //// - marks self for rotation
+    markCurrentInstructionForRotation(dss, 0u);
+    return true;
+  }
+
+  Bool performDeployPayload(DiamondSequencerState & dss) {
+    //// - if it has a downstream ngb
+    ////   = move itself to green, so now it has no downstream
+    ////   = regrip G<->W
+
+    EventWindow ew;
+    if (mPocketPtrs[cBODY_DOWN] != cPP_NULL) {
+      ProcUnitInfo & pui = dss.getPUInfo(cPUNIT_BLU);// BLU is better since higher
+      if (!pui.mFound) return false; // ??
+      if (pui.mOccupiedSites > 0u) return false; // block
+      if (pui.mEmptySN == SN.maxof) return false;
+
+      Self copy = self;
+      copy.mPocketPtrs[cBODY_DOWN] = cPP_NULL;
+      copy.mPocketPtrs[cBODY_UP] = cPP_NULL; // good measure?
+      ew[pui.mEmptySN] = copy.atomof;
+
+      // Let's regrip before stepping on self..
+      dss.swapPUs(cPUNIT_BLU,cPUNIT_WHT);
+
+      // Now step on self..
+      SN mysn = ew.getSiteNumber(self);
+      if (mysn == SN.maxof) fail(__FILE__,__LINE__);
+      EmptyCodon ec;
+      BaseClassUtils bcu;
+      bcu.copySharedData(self.atomof, ec.atomof);
+      ec.init();
+      ew[mysn] = ec.atomof;
+      return true;
+    }
+
+    //// - if it has no downstream ngb
+    ////   = if killLoop G in progress, block
+    ////   = else delete the DS
+    if (mPocketPtrs[cBODY_DOWN] == cPP_NULL) {    
+      Bool killblu = killPU(cPUNIT_BLU, dss);
+      if (!killblu) return false; // block till kilt
+      // blue is killed
+      ////   = AND SWITCH TO POPPER MODE
+      mStateIdx = cP10_POPPER_MODE;
+      ew[0] = Empty.instanceof;   // kill DS
+      return true;
+    }
+
+    // NOT REACHED
+    fail(__FILE__,__LINE__);
+    return false;
+  }
+
+  //// CODON API
+  virtual Void init() {
+    super.init();
+    mDSType = cDS_NORM;
+  }
+
+  //// URSELF API
+  Void behave() {
+    pursueIntention();
+  }
+}

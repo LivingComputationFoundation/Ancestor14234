@@ -1,0 +1,128 @@
+/** IntercellularGoo: Help separate opposing cell membranes. Survive
+    if see two dirbound membranes with opposite opendirs, and no more
+    than three other IG. Take die shot if not two opposing membranes,
+    or >3 ngb IGs. Spawn locally if survive and see <2 IG ngbs.
+
+    \symbol IG
+    \color #ff0
+*/
+element IntercellularGoo + Unpocketed + DTU + QDebugUtils {
+  Bool mToggle;
+
+  Bool mRipcord; //< pull to end IntercellularGoo collectively
+
+  typedef XTimer(4u,12u,1u) RipcordTimer;
+  RipcordTimer mRipcordTimer;
+
+  @Override
+  virtual ARGB getColor(Unsigned selector) {
+    ColorUtils cu;
+    return cu.color(mToggle ? 0xff888800 : 0xff0000ff);
+  }
+
+  @Override
+  virtual Void renderGraphics() {
+    Drawable drawable;
+    if (!drawable.canDraw()) return;
+    super.renderGraphics();
+
+    MDist md; // No ew when rendering!  Can't use ew.getCoordRaw()!
+    
+    constant Unsigned cCROSS_WIDTH = 200u;
+    constant C2D.Coord cDIST = 300;
+    C2D corners[] = {
+      { .x = -cDIST, .y = -cDIST },
+      { .x =  cDIST, .y = -cDIST },
+      { .x =  cDIST, .y =  cDIST },
+      { .x = -cDIST, .y =  cDIST },
+    };
+    ARGB col = getColor(2u);
+    drawable.drawMaskedLine(corners[0],corners[2], col, col, 0xffffffffu, cCROSS_WIDTH);
+    drawable.drawMaskedLine(corners[1],corners[3], col, col, 0xffffffffu, cCROSS_WIDTH);
+  }
+
+  Bool checkRipcord() {
+    EventWindow ew;
+    if (mRipcordTimer.countAlarm())
+      mRipcord = true;
+
+    // Pull ngb rip
+    if (!mRipcord) {
+      for (SN sn = 1u; sn <= 8u; ++sn) {
+        if (!ew.isAccessible(sn)) continue;
+        Atom & a = ew[sn];
+        if (a as Self) {
+          if (a.mRipcord) {
+            mRipcord = true;
+            break;
+          }
+        }
+      }
+    }
+
+    // Push our rip
+    if (mRipcord) {
+      for (SN sn = 1u; sn <= 40u; ++sn) {
+        if (!ew.isAccessible(sn)) continue;
+        Atom & a = ew[sn];
+        if (a as Self) {
+          a.mRipcord = true;
+        }
+      }
+      // and punch out
+      ew[0] = Empty.instanceof;
+      return true;
+    }
+    return false;
+  }
+
+  Void behave() {
+    mToggle = !mToggle; // Show liveness
+    if (checkRipcord()) return;
+
+    Unsigned selfcount = 0u;
+    Unsigned empcount = 0u;
+    Unsigned edgecount = 0u;
+    Unsigned membcount = 0u;
+    SN empsn;
+    Bool dirbounds[4];
+    EventWindow ew;
+    Random random;
+    for (SN sn = 1u; sn < 41u; ++sn) {
+      if (!ew.isAccessible(sn)) {
+        ++edgecount;
+        continue;
+      }
+      Atom & a = ew[sn];
+      if (sn < 9u) { // moore ngb cases
+        if (a is Empty) {
+          if (random.oneIn(++empcount)) empsn = sn;
+          continue;
+        }
+        if (a is Self) {
+          ++selfcount;
+          continue;
+        }
+      }
+      if (a as Membrane) {
+        ++membcount;
+        if (a.mDirBound) dirbounds[a.mOpenDir] = true;
+        continue;
+      }
+    }
+    Bool oppos =
+      (dirbounds[cQUAD_NW] && dirbounds[cQUAD_SE]) ||
+      (dirbounds[cQUAD_NE] && dirbounds[cQUAD_SW])/* ||
+      (edgecount >= 9u && membcount > 0u)*/;
+
+    if (!oppos || selfcount > 3u) {
+      if (random.oneIn(2u)) 
+        ew[0] = Empty.instanceof;
+      return;
+    }
+
+    if (selfcount < 2u && empcount > 0u)
+      ew[empsn] = Self.instanceof;
+  }
+}
+
